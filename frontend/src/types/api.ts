@@ -43,6 +43,124 @@ export interface StudentProfileUpsert {
   preferred_language: SupportedLanguage;
 }
 
+// Admin Catalog, DAG & Versioned Question Bank Contracts (FR10–FR12)
+
+export interface TopicAdminRead {
+  topic_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  display_order: number;
+  prerequisite_topic_ids: string[];
+  active_resource_count: number;
+  active_question_count: number;
+}
+
+export interface TopicCreatePayload {
+  name: string;
+  slug: string;
+  description: string;
+  display_order: number;
+  prerequisite_topic_ids: string[];
+}
+
+export interface TopicUpdatePayload {
+  name?: string;
+  slug?: string;
+  description?: string;
+  display_order?: number;
+  prerequisite_topic_ids?: string[];
+}
+
+export interface ResourceAdminRead {
+  resource_id: string;
+  topic_id: string;
+  topic_name: string | null;
+  created_by: string;
+  title: string;
+  description: string;
+  external_url: string;
+  content_type: ContentType;
+  difficulty: DifficultyLevel;
+  language: SupportedLanguage;
+  estimated_minutes: number | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ResourceCreatePayload {
+  topic_id: string;
+  title: string;
+  description: string;
+  external_url: string;
+  content_type: ContentType;
+  difficulty: DifficultyLevel;
+  language: SupportedLanguage;
+  estimated_minutes: number | null;
+}
+
+export interface ResourceUpdatePayload {
+  topic_id?: string;
+  title?: string;
+  description?: string;
+  external_url?: string;
+  content_type?: ContentType;
+  difficulty?: DifficultyLevel;
+  language?: SupportedLanguage;
+  estimated_minutes?: number | null;
+  is_active?: boolean;
+}
+
+export interface QuestionAdminRead {
+  question_id: string;
+  topic_id: string;
+  topic_name: string | null;
+  created_by: string;
+  question_text: string;
+  code_snippet: string | null;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_option: AnswerOption;
+  explanation: string;
+  difficulty: DifficultyLevel;
+  version: number;
+  previous_question_id: string | null;
+  is_active: boolean;
+  is_answered: boolean;
+  created_at: string;
+}
+
+export interface QuestionCreatePayload {
+  topic_id: string;
+  question_text: string;
+  code_snippet: string | null;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_option: AnswerOption;
+  explanation: string;
+  difficulty: DifficultyLevel;
+}
+
+export interface QuestionUpdatePayload {
+  topic_id?: string;
+  question_text?: string;
+  code_snippet?: string | null;
+  option_a?: string;
+  option_b?: string;
+  option_c?: string;
+  option_d?: string;
+  correct_option?: AnswerOption;
+  explanation?: string;
+  difficulty?: DifficultyLevel;
+  is_active?: boolean;
+}
+
+// Student Learning Path & Recommendation Contracts
+
 export interface LearningPathNode {
   topic_id: string;
   name: string;

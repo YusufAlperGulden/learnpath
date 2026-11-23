@@ -12,6 +12,7 @@ from app.schemas.assessment import (
 )
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserRead
 from app.schemas.catalog import (
+    ActiveStatusPatch,
     QuestionAdminRead,
     QuestionCreate,
     QuestionUpdate,
@@ -44,6 +45,7 @@ from app.schemas.recommendation import (
 )
 
 __all__ = [
+    "ActiveStatusPatch",
     "AnswerReviewItem",
     "AssessmentAttemptDetailResponse",
     "AssessmentAttemptSummary",

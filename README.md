@@ -44,6 +44,13 @@ npm run dev
 
 Open `http://localhost:5173` in Chrome, Firefox, or Edge.
 
+### Default Seeded Accounts (`scripts.seed_data`)
+
+| Role | Email | Password | Seeded Catalog |
+| :--- | :--- | :--- | :--- |
+| `ADMIN` | `admin@learnpath.local` | `AdminPass123!` | 6 DAG topics, 54 resources (`en` & `tr`), 36 code-snippet questions |
+| `STUDENT` | `student@learnpath.local` | `StudentPass123!` | Pre-configured `BEGINNER` profile (`VIDEO`, `EXERCISE`) |
+
 ## Key Engineering Rules (RAD v2.0)
 
 1. **Answer Key Confidentiality (`FR03`)**: Assessment question delivery never exposes `correct_option` or `explanation`; a signed `test_session_token` binds `student_id`, `attempt_id`, and `question_ids` without creating orphan draft DB rows.
