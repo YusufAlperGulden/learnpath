@@ -7,6 +7,7 @@ import { ProfileSetupPage } from './pages/student/ProfileSetupPage';
 import { DashboardPage } from './pages/student/DashboardPage';
 import { RoadmapPage } from './pages/student/RoadmapPage';
 import { RecommendationsPage } from './pages/student/RecommendationsPage';
+import { BookmarksPage } from './pages/student/BookmarksPage';
 import { PlacementTestPage } from './pages/assessment/PlacementTestPage';
 import { AnswerReviewPage } from './pages/assessment/AnswerReviewPage';
 import { ResourceManagerPage } from './pages/admin/ResourceManagerPage';
@@ -59,6 +60,14 @@ export function App() {
               element={
                 <ProtectedRoute allowedRoles={['STUDENT']}>
                   <RecommendationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/bookmarks"
+              element={
+                <ProtectedRoute allowedRoles={['STUDENT']}>
+                  <BookmarksPage />
                 </ProtectedRoute>
               }
             />

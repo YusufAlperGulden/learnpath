@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Background, Controls, ReactFlow, type Edge, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { BookOpen, GraduationCap, Lock } from 'lucide-react';
@@ -9,6 +9,9 @@ import { AppLayout } from '../../components/layout/AppLayout';
 import { Badge, Card } from '../../components/ui';
 
 export function RoadmapPage() {
+  const queryClient = useQueryClient();
+  const manualCheckboxId = useId();
+  const manualHintId = useId();
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,6 +21,17 @@ export function RoadmapPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['learning-path'],
     queryFn: studentApi.getLearningPath,
+  });
+
+  const toggleManualMutation = useMutation({
+    mutationFn: ({ topicId, completed }: { topicId: string; completed: boolean }) =>
+      studentApi.toggleTopicManualCompletion(topicId, completed),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['learning-path'] }),
+        queryClient.invalidateQueries({ queryKey: ['topic-progress'] }),
+      ]);
+    },
   });
 
   const nodes = data?.nodes ?? [];
@@ -36,33 +50,37 @@ export function RoadmapPage() {
   );
 
   const { flowNodes, flowEdges } = useMemo(() => {
-    const flowNodesResult: Node[] = nodes.map((topic, idx) => ({
-      id: topic.topic_id,
-      position: { x: (idx % 2) * 320 + 50, y: Math.floor(idx / 2) * 140 + 35 },
-      data: {
-        label: `${topic.display_order}. ${topic.name} [${
-          topic.is_locked ? 'LOCKED' : topic.mastery_status
-        }]`,
-      },
-      style: {
-        borderRadius: '12px',
-        padding: '12px',
-        border: topic.is_locked
-          ? '2px dashed #94a3b8'
-          : topic.mastery_status === 'MASTERED'
-            ? '2px solid #059669'
-            : '2px solid #2563eb',
-        background: topic.is_locked
-          ? '#f8fafc'
-          : topic.mastery_status === 'MASTERED'
-            ? '#ecfdf5'
-            : '#ffffff',
-        color: '#0f172a',
-        fontWeight: 600,
-        width: 255,
-        cursor: 'pointer',
-      },
-    }));
+    const flowNodesResult: Node[] = nodes.map((topic, idx) => {
+      const gateTag = topic.is_locked ? 'LOCKED' : topic.mastery_status;
+      const studyTag = topic.is_manually_completed ? ' · Self-Studied ✓' : '';
+      return {
+        id: topic.topic_id,
+        position: { x: (idx % 2) * 325 + 45, y: Math.floor(idx / 2) * 145 + 35 },
+        data: {
+          label: `${topic.display_order}. ${topic.name} [${gateTag}${studyTag}]`,
+        },
+        style: {
+          borderRadius: '12px',
+          padding: '12px',
+          border: topic.is_locked
+            ? '2px dashed #94a3b8'
+            : topic.mastery_status === 'MASTERED'
+              ? '2px solid #059669'
+              : '2px solid #2563eb',
+          background: topic.is_locked
+            ? '#f8fafc'
+            : topic.mastery_status === 'MASTERED'
+              ? '#ecfdf5'
+              : topic.is_manually_completed
+                ? '#eff6ff'
+                : '#ffffff',
+          color: '#0f172a',
+          fontWeight: 600,
+          width: 265,
+          cursor: 'pointer',
+        },
+      };
+    });
 
     const flowEdgesResult: Edge[] = (data?.edges ?? []).map((edge) => ({
       id: `${edge.prerequisite_topic_id}->${edge.topic_id}`,
@@ -77,17 +95,17 @@ export function RoadmapPage() {
   return (
     <AppLayout
       pageTitle="Python Prerequisite Roadmap (DAG)"
-      pageSubtitle="Click any curriculum node to inspect prerequisite gates, exam mastery, and recommended study actions (FR05)."
+      pageSubtitle="Self-study completion tracks your personal study checklist, while exam mastery (>= 70%) unlocks downstream prerequisite gates (FR05, FR08)."
     >
       <div className="mb-4 flex flex-wrap gap-2">
-        <Badge tone="success">MASTERED (&gt;= 70%)</Badge>
+        <Badge tone="success">MASTERED (&gt;= 70% Exam Gate)</Badge>
         <Badge tone="warning">NEEDS_PRACTICE (&lt; 70%)</Badge>
-        <Badge tone="info">UNKNOWN (Unlocked)</Badge>
+        <Badge tone="info">Self-Studied ✓ (Manual Checklist)</Badge>
         <Badge tone="neutral">LOCKED (Unmet Prerequisite)</Badge>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="h-[480px] overflow-hidden p-0 lg:col-span-2">
+        <Card className="h-[500px] overflow-hidden p-0 lg:col-span-2">
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-slate-600">
               Loading curriculum graph...
@@ -127,6 +145,9 @@ export function RoadmapPage() {
                   >
                     {inspectedNode.is_locked ? 'LOCKED' : inspectedNode.mastery_status}
                   </Badge>
+                  {inspectedNode.is_manually_completed ? (
+                    <Badge tone="info">Self-Studied ✓</Badge>
+                  ) : null}
                 </div>
 
                 <h2 className="text-lg font-bold text-slate-900">{inspectedNode.name}</h2>
@@ -142,12 +163,42 @@ export function RoadmapPage() {
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-slate-500">Self-Reported Study</dt>
+                    <dt className="text-slate-500">Exam Gate Status</dt>
                     <dd className="font-semibold text-slate-900">
-                      {inspectedNode.is_manually_completed ? 'Completed' : 'In progress'}
+                      {inspectedNode.mastery_status}
                     </dd>
                   </div>
                 </dl>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                  <div className="flex items-start gap-2.5">
+                    <input
+                      id={manualCheckboxId}
+                      name="is_manually_completed"
+                      type="checkbox"
+                      checked={inspectedNode.is_manually_completed}
+                      disabled={toggleManualMutation.isPending}
+                      aria-describedby={manualHintId}
+                      onChange={(e) =>
+                        toggleManualMutation.mutate({
+                          topicId: inspectedNode.topic_id,
+                          completed: e.target.checked,
+                        })
+                      }
+                      className="mt-0.5 h-5 w-5 cursor-pointer rounded border-slate-400 accent-blue-600"
+                    />
+                    <label
+                      htmlFor={manualCheckboxId}
+                      className="cursor-pointer text-xs font-semibold text-slate-900"
+                    >
+                      Mark topic self-study as completed
+                    </label>
+                  </div>
+                  <p id={manualHintId} className="mt-1.5 text-xs text-slate-600">
+                    Updates your personal study progress bar without bypassing the &gt;= 70% exam
+                    mastery prerequisite lock.
+                  </p>
+                </div>
 
                 {inspectedNode.is_locked ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">

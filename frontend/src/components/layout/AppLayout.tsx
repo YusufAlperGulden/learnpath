@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { BookOpen, Compass, GraduationCap, LayoutDashboard, LogOut, Shield } from 'lucide-react';
+import {
+  Bookmark,
+  BookOpen,
+  Compass,
+  GraduationCap,
+  LayoutDashboard,
+  LogOut,
+  Shield,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Badge, Button, cn } from '../ui';
 
@@ -17,6 +25,7 @@ export function AppLayout({ pageTitle, pageSubtitle, children }: AppLayoutProps)
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/roadmap', label: 'Learning Roadmap', icon: Compass },
     { to: '/recommendations', label: 'Recommendations', icon: BookOpen },
+    { to: '/bookmarks', label: 'Saved & Library', icon: Bookmark },
     { to: '/assessment', label: 'Placement & Quizzes', icon: GraduationCap },
   ];
 

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ExternalLink, GraduationCap, Sparkles } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, Bookmark, CheckCircle2, ExternalLink, GraduationCap, Sparkles } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { studentApi } from '../../api/student';
 import { AppLayout } from '../../components/layout/AppLayout';
@@ -9,6 +9,8 @@ import { Badge, Card, ProgressBar, ResponsiveTable } from '../../components/ui';
 import type { StudentProfile } from '../../types/api';
 
 export function DashboardPage() {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     document.title = 'Student Dashboard | LearnPath';
   }, []);
@@ -29,37 +31,98 @@ export function DashboardPage() {
     queryFn: studentApi.listAttempts,
   });
 
+  const { data: bookmarks = [] } = useQuery({
+    queryKey: ['bookmarks'],
+    queryFn: studentApi.listBookmarks,
+  });
+
+  const { data: history = [] } = useQuery({
+    queryKey: ['resource-history'],
+    queryFn: studentApi.listResourceHistory,
+  });
+
   const { data: recPreview } = useQuery({
     queryKey: ['recommendations', 'dashboard-preview'],
     queryFn: () => studentApi.getRecommendations({ strategy: 'rule_based', limit: 3 }),
+  });
+
+  const openResourceMutation = useMutation({
+    mutationFn: (resourceId: string) => studentApi.recordResourceOpen(resourceId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['resource-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['recommendations'] }),
+      ]);
+    },
   });
 
   const nodes = pathData?.nodes ?? [];
   const masteredCount = nodes.filter((n) => n.mastery_status === 'MASTERED').length;
   const manualCompletedCount = nodes.filter((n) => n.is_manually_completed).length;
   const nextTopic = nodes.find((n) => n.topic_id === pathData?.recommended_next_topic_id);
+  const completedResourcesCount = history.filter((h) => h.status === 'COMPLETED').length;
 
   return (
     <AppLayout
       pageTitle={profile ? `Welcome back, ${profile.display_name}` : 'Student Overview'}
-      pageSubtitle="Monitor your Python curriculum mastery, take diagnostic or topic quizzes, and review explainable study recommendations."
+      pageSubtitle="Monitor dual curriculum progress, saved resources, assessment history, and explainable study picks."
     >
       <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Card className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Exam Mastered
+            </p>
+            <p className="mt-1 text-2xl font-bold text-emerald-700">
+              {masteredCount} / {nodes.length}
+            </p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Self-Studied Topics
+            </p>
+            <p className="mt-1 text-2xl font-bold text-blue-700">
+              {manualCompletedCount} / {nodes.length}
+            </p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Completed Resources
+            </p>
+            <p className="mt-1 flex items-center gap-1.5 text-2xl font-bold text-slate-900">
+              <CheckCircle2 aria-hidden="true" className="h-5 w-5 text-emerald-600" />
+              {completedResourcesCount}
+            </p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Saved Bookmarks
+            </p>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-2xl font-bold text-slate-900">
+                <Bookmark aria-hidden="true" className="h-5 w-5 text-blue-600" />
+                {bookmarks.length}
+              </span>
+              <Link to="/bookmarks" className="text-xs font-semibold text-blue-600 hover:underline">
+                Open library
+              </Link>
+            </div>
+          </Card>
+        </div>
+
         <div className="grid gap-6 md:grid-cols-2">
           <Card className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900">Curriculum Progress</h2>
-              <Badge tone="info">
-                {masteredCount} / {nodes.length} Mastered
-              </Badge>
+              <h2 className="text-base font-semibold text-slate-900">Dual Curriculum Progress</h2>
+              <Badge tone="info">6-Topic DAG</Badge>
             </div>
             <ProgressBar
-              label="Exam-Verified Mastery (>= 70%)"
+              label="Exam-Verified Mastery (>= 70% Gate)"
               value={masteredCount}
               max={Math.max(nodes.length, 1)}
             />
             <ProgressBar
-              label="Self-Reported Study Completion"
+              label="Self-Reported Study Checklist"
               value={manualCompletedCount}
               max={Math.max(nodes.length, 1)}
             />
@@ -152,6 +215,9 @@ export function DashboardPage() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Badge tone="info">{item.topic_name}</Badge>
                       <Badge tone="neutral">{item.content_type}</Badge>
+                      {item.progress_status === 'OPENED' ? (
+                        <Badge tone="info">OPENED</Badge>
+                      ) : null}
                     </div>
                     <h3 className="mt-2 text-sm font-bold text-slate-900">{item.title}</h3>
                     <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-600">
@@ -167,6 +233,7 @@ export function DashboardPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`Open recommended resource ${item.title}`}
+                    onClick={() => openResourceMutation.mutate(item.resource_id)}
                     className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
                   >
                     Open resource

@@ -26,11 +26,13 @@ from app.schemas.catalog import (
 from app.schemas.profile import StudentProfileRead, StudentProfileUpsert
 from app.schemas.progress import (
     BookmarkCreateRequest,
+    BookmarkDetailRead,
     BookmarkRead,
     FeedbackRead,
     FeedbackUpsertRequest,
     ResourceProgressRead,
     ResourceProgressUpdateRequest,
+    StudyResourceHistoryItem,
     TopicProgressRead,
     TopicProgressToggleRequest,
 )
@@ -53,6 +55,7 @@ __all__ = [
     "AssessmentQuestionsResponse",
     "AssessmentSubmitRequest",
     "BookmarkCreateRequest",
+    "BookmarkDetailRead",
     "BookmarkRead",
     "FeedbackRead",
     "FeedbackUpsertRequest",
@@ -75,6 +78,7 @@ __all__ = [
     "ResourceUpdate",
     "StudentProfileRead",
     "StudentProfileUpsert",
+    "StudyResourceHistoryItem",
     "SubmittedAnswerItem",
     "TokenResponse",
     "TopicCreate",
