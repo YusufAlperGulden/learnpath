@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: learnpath_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-learnpath}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learnpath_dev_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-learnpath_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - learnpath_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-learnpath} -d $${POSTGRES_DB:-learnpath_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  learnpath_pgdata:
