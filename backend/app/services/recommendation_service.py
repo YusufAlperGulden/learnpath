@@ -17,7 +17,7 @@ from app.core.enums import (
 )
 from app.core.logging_config import get_logger
 from app.models.catalog import Resource, Topic
-from app.models.progress import ResourceProgress, TopicProgress
+from app.models.progress import Feedback, ResourceProgress, SavedResource, TopicProgress
 from app.models.user import User
 from app.schemas.recommendation import (
     LearningPathEdge,
@@ -330,6 +330,39 @@ def generate_student_recommendations(
         if fallback_reason is None:
             fallback_reason = "preferred_format_relaxed"
 
+    ranked_ids = [entry.candidate.resource_id for entry in ranked]
+    bookmarked_ids: set[UUID] = set()
+    opened_by_id: dict[UUID, ResourceProgressStatus] = {}
+    feedback_by_id: dict[UUID, Feedback] = {}
+
+    if ranked_ids:
+        bookmarked_ids = set(
+            db.scalars(
+                select(SavedResource.resource_id).where(
+                    SavedResource.student_id == student.user_id,
+                    SavedResource.resource_id.in_(ranked_ids),
+                )
+            ).all()
+        )
+        opened_by_id = {
+            rp.resource_id: ResourceProgressStatus(rp.status)
+            for rp in db.scalars(
+                select(ResourceProgress).where(
+                    ResourceProgress.student_id == student.user_id,
+                    ResourceProgress.resource_id.in_(ranked_ids),
+                )
+            ).all()
+        }
+        feedback_by_id = {
+            fb.resource_id: fb
+            for fb in db.scalars(
+                select(Feedback).where(
+                    Feedback.student_id == student.user_id,
+                    Feedback.resource_id.in_(ranked_ids),
+                )
+            ).all()
+        }
+
     items = [
         RecommendedResourceItem(
             resource_id=entry.candidate.resource_id,
@@ -346,6 +379,18 @@ def generate_student_recommendations(
             score=entry.score,
             format_fallback_used=entry.format_fallback_used,
             rationale=entry.rationale,
+            progress_status=opened_by_id.get(entry.candidate.resource_id),
+            is_bookmarked=entry.candidate.resource_id in bookmarked_ids,
+            my_rating=(
+                feedback_by_id[entry.candidate.resource_id].rating
+                if entry.candidate.resource_id in feedback_by_id
+                else None
+            ),
+            my_comment=(
+                feedback_by_id[entry.candidate.resource_id].comment
+                if entry.candidate.resource_id in feedback_by_id
+                else None
+            ),
         )
         for idx, entry in enumerate(ranked, start=1)
     ]

@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bar,
   BarChart,
@@ -11,10 +11,22 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, ExternalLink, GraduationCap, Sparkles } from 'lucide-react';
+import {
+  AlertCircle,
+  Bookmark,
+  CheckCircle2,
+  ExternalLink,
+  GraduationCap,
+  Sparkles,
+  Star,
+} from 'lucide-react';
 import { studentApi } from '../../api/student';
 import { AppLayout } from '../../components/layout/AppLayout';
-import { Badge, Card } from '../../components/ui';
+import {
+  FeedbackModal,
+  type FeedbackTarget,
+} from '../../components/student/FeedbackModal';
+import { Badge, Button, Card, cn } from '../../components/ui';
 
 function describeFallbackReason(reason: string | null): string {
   if (reason === 'preferred_format_relaxed') {
@@ -29,8 +41,10 @@ function describeFallbackReason(reason: string | null): string {
 }
 
 export function RecommendationsPage() {
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTopicId = searchParams.get('topicId') || '';
+  const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
 
   useEffect(() => {
     document.title = 'Explainable Recommendations | LearnPath';
@@ -51,6 +65,41 @@ export function RecommendationsPage() {
       }),
   });
 
+  const invalidateAfterInteraction = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['recommendations'] }),
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] }),
+      queryClient.invalidateQueries({ queryKey: ['resource-history'] }),
+    ]);
+  };
+
+  const openMutation = useMutation({
+    mutationFn: (resourceId: string) => studentApi.recordResourceOpen(resourceId),
+    onSuccess: invalidateAfterInteraction,
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: (resourceId: string) => studentApi.setResourceProgress(resourceId, 'COMPLETED'),
+    onSuccess: invalidateAfterInteraction,
+  });
+
+  const bookmarkMutation = useMutation({
+    mutationFn: async ({
+      resourceId,
+      isBookmarked,
+    }: {
+      resourceId: string;
+      isBookmarked: boolean;
+    }) => {
+      if (isBookmarked) {
+        await studentApi.removeBookmark(resourceId);
+      } else {
+        await studentApi.saveBookmark(resourceId);
+      }
+    },
+    onSuccess: invalidateAfterInteraction,
+  });
+
   const nodes = pathData?.nodes ?? [];
   const priorityChartData = (data?.priority_topics ?? []).map((pt) => ({
     name: pt.name,
@@ -60,7 +109,7 @@ export function RecommendationsPage() {
   return (
     <AppLayout
       pageTitle="Personalized Resource Recommendations"
-      pageSubtitle="Prerequisite-aware study resources ranked with transparent, truthful explanations (FR05–FR07)."
+      pageSubtitle="Prerequisite-aware study resources ranked with transparent explanations, bookmarking, completion tracking, and 1–5 ratings (FR05–FR09)."
     >
       <Card className="mb-6 flex flex-wrap items-end justify-between gap-4 p-4">
         <div className="flex flex-wrap items-end gap-4">
@@ -92,12 +141,20 @@ export function RecommendationsPage() {
           </div>
         </div>
 
-        <Link
-          to="/profile/setup"
-          className="text-xs font-semibold text-blue-600 hover:underline"
-        >
-          Adjust format / language preferences
-        </Link>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link
+            to="/bookmarks"
+            className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
+          >
+            Open Saved &amp; Study History
+          </Link>
+          <Link
+            to="/profile/setup"
+            className="text-xs font-semibold text-blue-600 hover:underline"
+          >
+            Adjust preferences
+          </Link>
+        </div>
       </Card>
 
       {data?.fallback_applied ? (
@@ -181,71 +238,133 @@ export function RecommendationsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {data.items.map((item) => (
-            <Card key={item.resource_id} className="space-y-3.5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="neutral">#{item.rank}</Badge>
-                  <Badge tone="info">{item.topic_name}</Badge>
-                  <Badge tone="neutral">{item.content_type}</Badge>
-                  <Badge
-                    tone={
-                      item.difficulty === 'BEGINNER'
-                        ? 'success'
-                        : item.difficulty === 'INTERMEDIATE'
-                          ? 'info'
-                          : 'warning'
-                    }
-                  >
-                    {item.difficulty}
-                  </Badge>
-                  <span className="text-xs font-medium text-slate-500">
-                    {item.language.toUpperCase()}
-                    {item.estimated_minutes ? ` · ${item.estimated_minutes} min` : ''}
-                  </span>
-                  {item.format_fallback_used ? (
-                    <Badge tone="warning">Format Relaxed</Badge>
-                  ) : null}
+          {data.items.map((item) => {
+            const bookmarked = Boolean(item.is_bookmarked);
+            return (
+              <Card key={item.resource_id} className="space-y-3.5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="neutral">#{item.rank}</Badge>
+                    <Badge tone="info">{item.topic_name}</Badge>
+                    <Badge tone="neutral">{item.content_type}</Badge>
+                    <Badge
+                      tone={
+                        item.difficulty === 'BEGINNER'
+                          ? 'success'
+                          : item.difficulty === 'INTERMEDIATE'
+                            ? 'info'
+                            : 'warning'
+                      }
+                    >
+                      {item.difficulty}
+                    </Badge>
+                    <span className="text-xs font-medium text-slate-500">
+                      {item.language.toUpperCase()}
+                      {item.estimated_minutes ? ` · ${item.estimated_minutes} min` : ''}
+                    </span>
+                    {item.progress_status === 'OPENED' ? (
+                      <Badge tone="info">OPENED</Badge>
+                    ) : null}
+                    {item.format_fallback_used ? (
+                      <Badge tone="warning">Format Relaxed</Badge>
+                    ) : null}
+                    {item.my_rating ? (
+                      <Badge tone="warning">{item.my_rating}/5 ★</Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={item.external_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Study resource ${item.title}`}
+                      onClick={() => openMutation.mutate(item.resource_id)}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      Study Resource
+                      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                    </a>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Mark ${item.title} as completed`}
+                      onClick={() => completeMutation.mutate(item.resource_id)}
+                    >
+                      <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" />
+                      Mark Completed
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-pressed={bookmarked}
+                      aria-label={`${bookmarked ? 'Remove bookmark' : 'Save bookmark'} for ${item.title}`}
+                      onClick={() =>
+                        bookmarkMutation.mutate({
+                          resourceId: item.resource_id,
+                          isBookmarked: bookmarked,
+                        })
+                      }
+                    >
+                      <Bookmark
+                        aria-hidden="true"
+                        className={cn(
+                          'h-3.5 w-3.5',
+                          bookmarked ? 'fill-blue-600 text-blue-600' : 'text-slate-600',
+                        )}
+                      />
+                      {bookmarked ? 'Saved' : 'Save'}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Rate ${item.title}`}
+                      onClick={() =>
+                        setFeedbackTarget({
+                          resource_id: item.resource_id,
+                          title: item.title,
+                          initialRating: item.my_rating,
+                          initialComment: item.my_comment,
+                        })
+                      }
+                    >
+                      <Star aria-hidden="true" className="h-3.5 w-3.5 text-amber-500" />
+                      {item.my_rating ? `${item.my_rating}★` : 'Rate'}
+                    </Button>
+
+                    <Link
+                      to={`/assessment?type=TOPIC_QUIZ&topicId=${item.topic_id}`}
+                      aria-label={`Verify mastery quiz for ${item.topic_name}`}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                    >
+                      <GraduationCap aria-hidden="true" className="h-3.5 w-3.5" />
+                      Quiz
+                    </Link>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    href={item.external_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Study resource ${item.title}`}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                  >
-                    Study Resource
-                    <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                  </a>
-                  <Link
-                    to={`/assessment?type=TOPIC_QUIZ&topicId=${item.topic_id}`}
-                    aria-label={`Verify mastery quiz for ${item.topic_name}`}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
-                  >
-                    <GraduationCap aria-hidden="true" className="h-3.5 w-3.5" />
-                    Verify Mastery
-                  </Link>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-base font-bold text-slate-900">{item.title}</h3>
-                <p className="mt-1 text-sm text-slate-600">{item.description}</p>
-              </div>
-
-              <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-xs text-slate-800">
-                <Sparkles aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
                 <div>
-                  <span className="font-semibold text-blue-950">Why this was recommended: </span>
-                  {item.rationale}
+                  <h3 className="text-base font-bold text-slate-900">{item.title}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{item.description}</p>
                 </div>
-              </div>
-            </Card>
-          ))}
+
+                <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-xs text-slate-800">
+                  <Sparkles aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                  <div>
+                    <span className="font-semibold text-blue-950">Why this was recommended: </span>
+                    {item.rationale}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      <FeedbackModal target={feedbackTarget} onClose={() => setFeedbackTarget(null)} />
     </AppLayout>
   );
 }

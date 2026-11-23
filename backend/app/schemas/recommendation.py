@@ -9,6 +9,7 @@ from app.core.enums import (
     ContentType,
     DifficultyLevel,
     MasteryStatus,
+    ResourceProgressStatus,
     SupportedLanguage,
 )
 
@@ -61,6 +62,10 @@ class RecommendedResourceItem(BaseModel):
     score: float | None = None
     format_fallback_used: bool = False
     rationale: str
+    progress_status: ResourceProgressStatus | None = None
+    is_bookmarked: bool = False
+    my_rating: int | None = None
+    my_comment: str | None = None
 
 
 class RecommendationResponse(BaseModel):

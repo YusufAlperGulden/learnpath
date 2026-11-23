@@ -280,6 +280,87 @@ export interface RecommendedResourceItem {
   score: number | null;
   format_fallback_used: boolean;
   rationale: string;
+  progress_status?: ResourceProgressStatus | null;
+  is_bookmarked?: boolean;
+  my_rating?: number | null;
+  my_comment?: string | null;
+}
+
+// Dual Progress, Bookmarks & 1–5 Feedback Contracts (FR08–FR09)
+
+export interface TopicProgressRead {
+  student_id: string;
+  topic_id: string;
+  topic_name: string | null;
+  is_manually_completed: boolean;
+  manually_completed_at: string | null;
+  latest_score_percent: number | null;
+  mastery_status: MasteryStatus;
+  updated_at: string;
+}
+
+export interface ResourceProgressRead {
+  student_id: string;
+  resource_id: string;
+  status: ResourceProgressStatus;
+  first_opened_at: string;
+  completed_at: string | null;
+  last_accessed_at: string;
+}
+
+export interface StudyResourceHistoryItem {
+  resource_id: string;
+  topic_id: string;
+  topic_name: string;
+  title: string;
+  description: string;
+  external_url: string;
+  content_type: ContentType;
+  difficulty: DifficultyLevel;
+  language: SupportedLanguage;
+  estimated_minutes: number | null;
+  is_active: boolean;
+  status: ResourceProgressStatus;
+  first_opened_at: string;
+  completed_at: string | null;
+  last_accessed_at: string;
+  is_bookmarked: boolean;
+  my_rating: number | null;
+  my_comment: string | null;
+}
+
+export interface BookmarkDetailRead {
+  student_id: string;
+  resource_id: string;
+  saved_at: string;
+  topic_id: string;
+  topic_name: string;
+  title: string;
+  description: string;
+  external_url: string;
+  content_type: ContentType;
+  difficulty: DifficultyLevel;
+  language: SupportedLanguage;
+  estimated_minutes: number | null;
+  is_active: boolean;
+  progress_status: ResourceProgressStatus | null;
+  my_rating: number | null;
+  my_comment: string | null;
+}
+
+export interface FeedbackUpsertPayload {
+  resource_id: string;
+  rating: number;
+  comment?: string | null;
+}
+
+export interface FeedbackRead {
+  feedback_id: string;
+  student_id: string;
+  resource_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
 }
 
 export interface RecommendationResponse {
