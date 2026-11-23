@@ -159,6 +159,79 @@ export interface QuestionUpdatePayload {
   is_active?: boolean;
 }
 
+// Student Assessment Contracts (FR03–FR04)
+
+export interface AssessmentQuestionPublic {
+  question_id: string;
+  topic_id: string;
+  topic_name: string;
+  question_text: string;
+  code_snippet: string | null;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+}
+
+export interface AssessmentQuestionsResponse {
+  attempt_id: string;
+  test_type: TestType;
+  target_topic_id: string | null;
+  test_session_token: string;
+  questions: AssessmentQuestionPublic[];
+}
+
+export interface SubmittedAnswerItem {
+  question_id: string;
+  selected_option: AnswerOption | null;
+}
+
+export interface AssessmentSubmitPayload {
+  attempt_id: string;
+  test_session_token: string;
+  answers: SubmittedAnswerItem[];
+}
+
+export interface TopicScoreRead {
+  topic_id: string;
+  topic_name: string;
+  correct_count: number;
+  question_count: number;
+  score_percent: number;
+  mastery_status: MasteryStatus;
+}
+
+export interface AnswerReviewItem {
+  question_id: string;
+  topic_id: string;
+  topic_name: string;
+  question_text: string;
+  code_snippet: string | null;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  selected_option: AnswerOption | null;
+  correct_option: AnswerOption;
+  is_correct: boolean;
+  is_skipped: boolean;
+  explanation: string;
+}
+
+export interface AssessmentAttemptSummary {
+  attempt_id: string;
+  test_type: TestType;
+  target_topic_id: string | null;
+  overall_score_percent: number;
+  started_at: string;
+  submitted_at: string;
+}
+
+export interface AssessmentAttemptDetail extends AssessmentAttemptSummary {
+  topic_scores: TopicScoreRead[];
+  answers: AnswerReviewItem[];
+}
+
 // Student Learning Path & Recommendation Contracts
 
 export interface LearningPathNode {
