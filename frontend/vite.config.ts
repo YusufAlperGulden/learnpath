@@ -9,5 +9,14 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
+          xyflow: ['@xyflow/react'],
+          prism: ['prism-react-renderer'],
+        },
+      },
+    },
   },
 });

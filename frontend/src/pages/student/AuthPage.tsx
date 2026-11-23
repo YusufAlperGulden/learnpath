@@ -14,8 +14,19 @@ export function AuthPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { setSession } = useAuth();
+  const { user, setSession } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user) return;
+    if (user.role === 'ADMIN') {
+      navigate('/admin/resources', { replace: true });
+    } else if (!user.has_profile) {
+      navigate('/profile/setup', { replace: true });
+    } else {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   useEffect(() => {
     document.title = mode === 'login' ? 'Sign In | LearnPath' : 'Create Account | LearnPath';

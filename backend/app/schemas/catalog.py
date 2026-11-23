@@ -8,6 +8,10 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from app.core.enums import AnswerOption, ContentType, DifficultyLevel, SupportedLanguage
 
 
+class ActiveStatusPatch(BaseModel):
+    is_active: bool
+
+
 class TopicCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     slug: str = Field(min_length=2, max_length=150, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -18,6 +22,12 @@ class TopicCreate(BaseModel):
 
 class TopicUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
+    slug: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=150,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    )
     description: str | None = Field(default=None, min_length=5)
     display_order: int | None = Field(default=None, ge=0)
     prerequisite_topic_ids: list[UUID] | None = None
@@ -32,6 +42,8 @@ class TopicRead(BaseModel):
     description: str
     display_order: int
     prerequisite_topic_ids: list[UUID] = Field(default_factory=list)
+    active_resource_count: int = 0
+    active_question_count: int = 0
 
 
 class ResourceCreate(BaseModel):
@@ -62,6 +74,7 @@ class ResourceRead(BaseModel):
 
     resource_id: UUID
     topic_id: UUID
+    topic_name: str | None = None
     created_by: UUID
     title: str
     description: str
@@ -106,6 +119,7 @@ class QuestionAdminRead(BaseModel):
 
     question_id: UUID
     topic_id: UUID
+    topic_name: str | None = None
     created_by: UUID
     question_text: str
     code_snippet: str | None
@@ -119,4 +133,5 @@ class QuestionAdminRead(BaseModel):
     version: int
     previous_question_id: UUID | None
     is_active: bool
+    is_answered: bool = False
     created_at: datetime

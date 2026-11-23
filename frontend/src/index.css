@@ -32,3 +32,109 @@ dialog::backdrop {
   outline: 3px solid #2563eb;
   outline-offset: 2px;
 }
+
+/* Accessible tab indicator driven by aria-selected with a forced-colors-safe border */
+[role="tab"] {
+  position: relative;
+  flex: none;
+}
+
+[role="tab"][aria-selected="true"] {
+  color: #1d4ed8;
+}
+
+[role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  border-block-end: 3px solid #2563eb;
+}
+
+/* Container-responsive data table with sticky headers and narrow-screen stacked fallback */
+.lp-table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(640px, 78vh);
+  container-type: inline-size;
+}
+
+.lp-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.lp-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background-color: #f8fafc;
+}
+
+.lp-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background-color: #ffffff;
+}
+
+@container (width < 620px) {
+  .lp-table,
+  .lp-table thead,
+  .lp-table tbody,
+  .lp-table tr,
+  .lp-table th,
+  .lp-table td {
+    display: block;
+  }
+
+  .lp-table thead {
+    display: none;
+  }
+
+  .lp-table tbody tr {
+    margin-block-end: 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background-color: #ffffff;
+  }
+
+  .lp-table tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background-color: #f1f5f9;
+    border-block-end: 1px solid #e2e8f0;
+  }
+
+  .lp-table td:nth-child(2)::before {
+    content: var(--label-2) ": ";
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .lp-table td:nth-child(3)::before {
+    content: var(--label-3) ": ";
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .lp-table td:nth-child(4)::before {
+    content: var(--label-4) ": ";
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .lp-table td:nth-child(5)::before {
+    content: var(--label-5) ": ";
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .lp-table td:nth-child(6)::before {
+    content: var(--label-6) ": ";
+    font-weight: 600;
+    color: #475569;
+  }
+}
