@@ -14,6 +14,7 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
           xyflow: ['@xyflow/react'],
+          recharts: ['recharts'],
           prism: ['prism-react-renderer'],
         },
       },

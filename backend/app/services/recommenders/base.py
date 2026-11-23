@@ -8,6 +8,7 @@ from app.core.enums import (
     ContentType,
     DifficultyLevel,
     ExperienceLevel,
+    MasteryStatus,
     SupportedLanguage,
 )
 
@@ -17,6 +18,7 @@ class CandidateResource:
     resource_id: UUID
     topic_id: UUID
     topic_name: str
+    topic_display_order: int
     title: str
     description: str
     external_url: str
@@ -34,6 +36,7 @@ class StudentRecommendationContext:
     preferred_language: SupportedLanguage
     learning_goal: str
     topic_scores: dict[UUID, float] = field(default_factory=dict)
+    topic_mastery: dict[UUID, MasteryStatus] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
