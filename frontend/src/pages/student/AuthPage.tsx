@@ -8,6 +8,7 @@ import type { TokenResponse } from '../../types/api';
 
 export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -39,10 +40,16 @@ export function AuthPage() {
 
     try {
       const endpoint = mode === 'register' ? '/auth/register' : '/auth/login';
-      const { data } = await apiClient.post<TokenResponse>(endpoint, {
-        email,
-        password,
-      });
+      const trimmedName = fullName.trim();
+      const { data } = await apiClient.post<TokenResponse>(
+        endpoint,
+        mode === 'register' && trimmedName
+          ? { email, password, display_name: trimmedName }
+          : { email, password },
+      );
+      if (mode === 'register' && trimmedName) {
+        window.sessionStorage.setItem('learnpath_pending_display_name', trimmedName);
+      }
       setSession(data);
       if (data.user.role === 'ADMIN') {
         navigate('/admin/resources', { replace: true });
@@ -84,6 +91,26 @@ export function AuthPage() {
                 className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
               >
                 {errorMessage}
+              </div>
+            ) : null}
+
+            {mode === 'register' ? (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="full-name" className="text-sm font-medium text-slate-900">
+                  Full name
+                </label>
+                <input
+                  id="full-name"
+                  name="display_name"
+                  type="text"
+                  maxLength={120}
+                  autoComplete="name"
+                  enterKeyHint="next"
+                  aria-invalid="false"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="min-h-12 rounded-lg border border-slate-400 px-3.5 py-2.5 text-base text-slate-900"
+                />
               </div>
             ) : null}
 

@@ -41,6 +41,7 @@ def get_recommendations(
     strategy: Annotated[RecommenderStrategy, Query()] = "rule_based",
     limit: Annotated[int, Query(ge=1, le=20)] = 5,
     topic_id: Annotated[UUID | None, Query()] = None,
+    include_completed: Annotated[bool, Query()] = False,
 ) -> RecommendationResponse:
     return generate_student_recommendations(
         db,
@@ -48,4 +49,5 @@ def get_recommendations(
         strategy=strategy,
         limit=limit,
         target_topic_id=topic_id,
+        include_completed=include_completed,
     )

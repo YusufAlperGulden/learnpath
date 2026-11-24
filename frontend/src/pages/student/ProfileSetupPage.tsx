@@ -78,7 +78,9 @@ const LANGUAGE_OPTIONS: RadioCardOption<SupportedLanguage>[] = [
 ];
 
 export function ProfileSetupPage() {
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(
+    () => window.sessionStorage.getItem('learnpath_pending_display_name') || '',
+  );
   const [learningGoal, setLearningGoal] = useState('PYTHON_FUNDAMENTALS');
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>('BEGINNER');
   const [preferredFormats, setPreferredFormats] = useState<ContentType[]>(['VIDEO', 'ARTICLE']);
@@ -86,6 +88,9 @@ export function ProfileSetupPage() {
   const [formatError, setFormatError] = useState<string | undefined>();
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [nextDestination, setNextDestination] = useState<'/assessment' | '/dashboard'>(
+    '/assessment',
+  );
 
   const { refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -124,8 +129,9 @@ export function ProfileSetupPage() {
         preferred_formats: preferredFormats,
         preferred_language: preferredLanguage,
       });
+      window.sessionStorage.removeItem('learnpath_pending_display_name');
       await refreshUser();
-      navigate('/dashboard');
+      navigate(nextDestination);
     } catch {
       setStatusBanner('Could not save profile preferences. Please check your inputs and retry.');
     } finally {
@@ -203,9 +209,25 @@ export function ProfileSetupPage() {
             onChange={setPreferredLanguage}
           />
 
-          <div className="flex justify-end border-t border-slate-100 pt-4">
-            <Button type="submit" size="lg" isLoading={isSaving}>
-              Save profile &amp; continue
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+            <Button
+              type="submit"
+              variant="outline"
+              size="lg"
+              isLoading={isSaving && nextDestination === '/dashboard'}
+              disabled={isSaving}
+              onClick={() => setNextDestination('/dashboard')}
+            >
+              Save &amp; return to overview
+            </Button>
+            <Button
+              type="submit"
+              size="lg"
+              isLoading={isSaving && nextDestination === '/assessment'}
+              disabled={isSaving}
+              onClick={() => setNextDestination('/assessment')}
+            >
+              Save &amp; start placement test &rarr;
             </Button>
           </div>
         </form>
