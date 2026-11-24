@@ -2,19 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { BookOpen, CheckCircle2, Compass, MinusCircle, XCircle } from 'lucide-react';
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Compass,
+  MinusCircle,
+  XCircle,
+} from 'lucide-react';
 import { studentApi } from '../../api/student';
 import { AppLayout } from '../../components/layout/AppLayout';
 import {
@@ -22,18 +16,111 @@ import {
   Button,
   Card,
   CodeSnippetBlock,
-  ResponsiveTable,
   cn,
 } from '../../components/ui';
+import type { AnswerReviewItem } from '../../types/api';
 
 type AnswerFilter = 'ALL' | 'INCORRECT' | 'SKIPPED' | 'CORRECT';
+
+function AnswerReviewCard({
+  ans,
+  questionNumber,
+}: {
+  ans: AnswerReviewItem;
+  questionNumber: number;
+}) {
+  const options = [
+    ['A', ans.option_a],
+    ['B', ans.option_b],
+    ['C', ans.option_c],
+    ['D', ans.option_d],
+  ] as const;
+
+  return (
+    <Card className="space-y-4 rounded-2xl border-[#dce6df] p-6 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="info">{ans.topic_name}</Badge>
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Question {String(questionNumber).padStart(2, '0')}
+          </span>
+        </div>
+
+        {ans.is_correct ? (
+          <Badge tone="success">
+            <CheckCircle2 aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
+            Correct
+          </Badge>
+        ) : ans.is_skipped ? (
+          <Badge tone="warning">
+            <MinusCircle aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
+            Skipped (No Option Selected)
+          </Badge>
+        ) : (
+          <Badge tone="danger">
+            <XCircle aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
+            Incorrect
+          </Badge>
+        )}
+      </div>
+
+      <p className="text-base font-bold leading-snug text-slate-900">{ans.question_text}</p>
+
+      {ans.code_snippet ? <CodeSnippetBlock code={ans.code_snippet} /> : null}
+
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        {options.map(([letter, text]) => {
+          const isCorrectOpt = ans.correct_option === letter;
+          const isStudentChoice = ans.selected_option === letter;
+
+          return (
+            <div
+              key={letter}
+              className={cn(
+                'flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-sm',
+                isCorrectOpt
+                  ? 'border-[#6db388] bg-[#e9f5ee] font-semibold text-[#14532d]'
+                  : isStudentChoice
+                    ? 'border-red-300 bg-red-50/90 font-semibold text-red-900'
+                    : 'border-slate-200 bg-white text-slate-700',
+              )}
+            >
+              <span>
+                <span className="mr-2 font-bold">{letter}.</span>
+                {text}
+              </span>
+              {isCorrectOpt ? (
+                <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[#14532d]">
+                  <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                  {isStudentChoice ? 'Yours' : 'Correct'}
+                </span>
+              ) : isStudentChoice ? (
+                <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-red-700">
+                  <XCircle aria-hidden="true" className="h-4 w-4" />
+                  Yours
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rounded-xl border border-[#b9d8c5] bg-[#edf6f0] p-4 text-sm text-[#14532d]">
+        <p className="text-xs font-bold uppercase tracking-wider text-[#14532d]">
+          Solution &amp; Explanation
+        </p>
+        <p className="mt-1 leading-relaxed text-slate-800">{ans.explanation}</p>
+      </div>
+    </Card>
+  );
+}
 
 export function AnswerReviewPage() {
   const { attemptId } = useParams<{ attemptId: string }>();
   const [filter, setFilter] = useState<AnswerFilter>('ALL');
 
   useEffect(() => {
-    document.title = 'Assessment Results & Solution Review | LearnPath';
+    document.title = 'Detail Test Analysis & Gap Review | LearnPath';
   }, []);
 
   const { data: attempt, isLoading, isError } = useQuery({
@@ -50,167 +137,130 @@ export function AnswerReviewPage() {
     return { total: answers.length, correct, incorrect, skipped };
   }, [attempt]);
 
-  const filteredAnswers = useMemo(() => {
-    const answers = attempt?.answers ?? [];
-    if (filter === 'CORRECT') return answers.filter((a) => a.is_correct);
-    if (filter === 'SKIPPED') return answers.filter((a) => a.is_skipped);
-    if (filter === 'INCORRECT') return answers.filter((a) => !a.is_correct && !a.is_skipped);
-    return answers;
-  }, [attempt, filter]);
-
-  const donutData = useMemo(
-    () => [
-      { name: 'Correct', value: stats.correct, color: '#059669' },
-      { name: 'Incorrect', value: stats.incorrect, color: '#dc2626' },
-      { name: 'Skipped', value: stats.skipped, color: '#d97706' },
-    ].filter((d) => d.value > 0),
-    [stats],
+  const indexedAnswers = useMemo(
+    () => (attempt?.answers ?? []).map((ans, idx) => ({ ans, num: idx + 1 })),
+    [attempt],
   );
+
+  const answeredItems = useMemo(
+    () => indexedAnswers.filter(({ ans }) => !ans.is_skipped),
+    [indexedAnswers],
+  );
+  const skippedItems = useMemo(
+    () => indexedAnswers.filter(({ ans }) => ans.is_skipped),
+    [indexedAnswers],
+  );
+
+  const filteredItems = useMemo(() => {
+    if (filter === 'CORRECT') return indexedAnswers.filter(({ ans }) => ans.is_correct);
+    if (filter === 'SKIPPED') return skippedItems;
+    if (filter === 'INCORRECT') {
+      return indexedAnswers.filter(({ ans }) => !ans.is_correct && !ans.is_skipped);
+    }
+    return indexedAnswers;
+  }, [indexedAnswers, skippedItems, filter]);
+
+  const gapTopics = useMemo(
+    () => (attempt?.topic_scores ?? []).filter((ts) => ts.mastery_status !== 'MASTERED'),
+    [attempt],
+  );
+
+  const contextLabel = attempt
+    ? `Detailed Test Analysis: ${attempt.test_type === 'DIAGNOSTIC' ? 'Python Placement Test' : 'Topic Mastery Quiz'}`
+    : 'Detailed Test Analysis';
 
   return (
     <AppLayout
-      pageTitle="Assessment Results & Solution Review"
-      pageSubtitle="Inspect topic mastery breakdown, skipped questions, and step-by-step explanations (FR04)."
+      variant="focused"
+      hidePageHeader
+      contextPill={contextLabel}
+      pageTitle="Detail Test Analysis and Gap Review"
     >
       {isLoading ? (
-        <Card className="p-8 text-center text-sm text-slate-600">Loading attempt review...</Card>
+        <Card className="mx-auto max-w-3xl p-10 text-center text-sm text-slate-600">
+          Loading detailed test analysis...
+        </Card>
       ) : isError || !attempt ? (
-        <Card role="alert" className="border-red-200 bg-red-50 text-sm text-red-800">
+        <Card
+          role="alert"
+          className="mx-auto max-w-3xl border-red-200 bg-red-50 text-sm text-red-800"
+        >
           Assessment attempt could not be found.
         </Card>
       ) : (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-4">
-            <Card className="p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Overall Score
-              </p>
-              <p className="mt-1 text-3xl font-bold text-slate-900">
+        <div className="mx-auto max-w-3xl space-y-6">
+          {/* Centered Analysis Header (Figma Screen 5) */}
+          <div className="text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Detail Test Analysis and Gap Review
+            </h2>
+            <p className="mt-1.5 text-sm text-slate-600">
+              Overall Score:{' '}
+              <strong className="text-[#14532d]">
                 {attempt.overall_score_percent.toFixed(1)}%
-              </p>
-              <Badge
-                tone={attempt.overall_score_percent >= 70 ? 'success' : 'warning'}
-                className="mt-2"
-              >
-                {attempt.test_type}
-              </Badge>
-            </Card>
-            <Card className="p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Correct</p>
-              <p className="mt-1 text-3xl font-bold text-emerald-700">{stats.correct}</p>
-              <p className="mt-1 text-xs text-slate-500">of {stats.total} questions</p>
-            </Card>
-            <Card className="p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Incorrect
-              </p>
-              <p className="mt-1 text-3xl font-bold text-red-600">{stats.incorrect}</p>
-              <p className="mt-1 text-xs text-slate-500">Needs concept review</p>
-            </Card>
-            <Card className="p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Skipped (NULL)
-              </p>
-              <p className="mt-1 text-3xl font-bold text-amber-700">{stats.skipped}</p>
-              <p className="mt-1 text-xs text-slate-500">Honest gap signal</p>
-            </Card>
+              </strong>{' '}
+              · {stats.correct} Correct · {stats.incorrect} Incorrect · {stats.skipped} Skipped
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              to="/recommendations"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          {/* Pathway Lock / Mastery Gate Banner (Figma Screen 5) */}
+          {gapTopics.length > 0 ? (
+            <div
+              role="status"
+              className="flex items-start gap-3 rounded-xl border border-[#96bfa5] bg-[#eaf4ee] px-4 py-3.5 text-sm text-slate-900"
             >
-              <BookOpen aria-hidden="true" className="h-4 w-4" />
-              View Personalized Recommendations
-            </Link>
-            <Link
-              to="/roadmap"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              <AlertTriangle
+                aria-hidden="true"
+                className="mt-0.5 h-5 w-5 shrink-0 text-amber-600"
+              />
+              <div>
+                <span className="font-bold text-[#14532d]">NEW PATHWAY LOCKED: </span>
+                <span>
+                  Resolve the missing and incorrect topics below (
+                  {gapTopics.map((g) => g.topic_name).join(', ')}) to reach &ge; 70% mastery and
+                  proceed to downstream lessons.
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div
+              role="status"
+              className="flex items-center gap-3 rounded-xl border border-[#8dc0a0] bg-[#e6f3eb] px-4 py-3.5 text-sm font-semibold text-[#14532d]"
             >
-              <Compass aria-hidden="true" className="h-4 w-4" />
-              Open Updated Learning Roadmap
-            </Link>
-          </div>
+              <CheckCircle2 aria-hidden="true" className="h-5 w-5 shrink-0" />
+              <span>
+                PATHWAY UNLOCKED: Every assessed topic achieved &ge; 70% mastery!
+              </span>
+            </div>
+          )}
 
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Card>
-              <figure>
-                <figcaption className="mb-3 text-sm font-semibold text-slate-900">
-                  Response Distribution
-                </figcaption>
-                <div className="h-52 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={donutData}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={48}
-                        outerRadius={76}
-                        paddingAngle={3}
-                      >
-                        {donutData.map((entry) => (
-                          <Cell key={entry.name} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </figure>
-            </Card>
-
-            <Card className="lg:col-span-2">
-              <figure>
-                <figcaption className="mb-3 text-sm font-semibold text-slate-900">
-                  Topic Mastery Breakdown (70% Threshold)
-                </figcaption>
-                <div className="h-52 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={attempt.topic_scores}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="topic_name" tick={{ fontSize: 11 }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
-                      <Tooltip />
-                      <ReferenceLine y={70} stroke="#059669" strokeDasharray="4 4" />
-                      <Bar dataKey="score_percent" name="Score %" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </figure>
-            </Card>
-          </div>
-
-          {/* Semantic table alternative for screen-reader and keyboard chart parity */}
-          <ResponsiveTable
-            caption="Per-topic score and mastery summary"
-            hideCaptionVisually={false}
-            headers={['Topic', 'Correct / Questions', 'Score %', 'Updated Mastery Status']}
-          >
+          {/* Topic Mastery Pills */}
+          <div className="flex flex-wrap items-center justify-center gap-2">
             {attempt.topic_scores.map((ts) => (
-              <tr key={ts.topic_id}>
-                <th scope="row" className="px-4 py-3 font-semibold text-slate-900">
-                  {ts.topic_name}
-                </th>
-                <td className="px-4 py-3 text-slate-700">
-                  {ts.correct_count} / {ts.question_count}
-                </td>
-                <td className="px-4 py-3 font-semibold text-slate-900">
-                  {ts.score_percent.toFixed(1)}%
-                </td>
-                <td className="px-4 py-3">
-                  <Badge tone={ts.mastery_status === 'MASTERED' ? 'success' : 'warning'}>
-                    {ts.mastery_status}
-                  </Badge>
-                </td>
-              </tr>
+              <span
+                key={ts.topic_id}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold',
+                  ts.mastery_status === 'MASTERED'
+                    ? 'border-[#b7d9c4] bg-[#ebf6ef] text-[#14532d]'
+                    : 'border-amber-200 bg-amber-50 text-amber-900',
+                )}
+              >
+                <span>{ts.topic_name}:</span>
+                <strong>{ts.score_percent.toFixed(0)}%</strong>
+                <span className="text-[10px] opacity-80">
+                  ({ts.correct_count}/{ts.question_count})
+                </span>
+              </span>
             ))}
-          </ResponsiveTable>
+          </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <h2 className="text-lg font-bold text-slate-900">Question-by-Question Solutions</h2>
-            <div className="flex flex-wrap gap-2">
+          {/* Filter Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2eae5] pb-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Question Breakdown
+            </p>
+            <div className="flex flex-wrap gap-1.5">
               {(
                 [
                   ['ALL', `All (${stats.total})`],
@@ -222,7 +272,7 @@ export function AnswerReviewPage() {
                 <Button
                   key={key}
                   size="sm"
-                  variant={filter === key ? 'secondary' : 'outline'}
+                  variant={filter === key ? 'primary' : 'outline'}
                   onClick={() => setFilter(key)}
                 >
                   {label}
@@ -231,78 +281,58 @@ export function AnswerReviewPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
-            {filteredAnswers.map((ans, idx) => {
-              const options = [
-                ['A', ans.option_a],
-                ['B', ans.option_b],
-                ['C', ans.option_c],
-                ['D', ans.option_d],
-              ] as const;
+          {/* Question Cards + Dedicated Skipped Questions Section (Figma Screen 5) */}
+          {filter === 'ALL' ? (
+            <div className="space-y-5">
+              {answeredItems.map(({ ans, num }) => (
+                <AnswerReviewCard key={ans.question_id} ans={ans} questionNumber={num} />
+              ))}
 
-              return (
-                <Card key={ans.question_id} className="space-y-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="neutral">Item {idx + 1}</Badge>
-                      <Badge tone="info">{ans.topic_name}</Badge>
-                    </div>
-                    {ans.is_correct ? (
-                      <Badge tone="success">
-                        <CheckCircle2 aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
-                        CORRECT
-                      </Badge>
-                    ) : ans.is_skipped ? (
-                      <Badge tone="warning">
-                        <MinusCircle aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
-                        SKIPPED (No Option Selected)
-                      </Badge>
-                    ) : (
-                      <Badge tone="danger">
-                        <XCircle aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
-                        INCORRECT
-                      </Badge>
-                    )}
+              {skippedItems.length > 0 ? (
+                <section aria-labelledby="skipped-section-heading" className="space-y-4 pt-2">
+                  <div className="rounded-xl border border-[#d6e3db] bg-[#edf3ef] px-4 py-2.5">
+                    <h3
+                      id="skipped-section-heading"
+                      className="text-xs font-bold uppercase tracking-widest text-slate-700"
+                    >
+                      Skipped Questions ({skippedItems.length})
+                    </h3>
                   </div>
+                  {skippedItems.map(({ ans, num }) => (
+                    <AnswerReviewCard key={ans.question_id} ans={ans} questionNumber={num} />
+                  ))}
+                </section>
+              ) : null}
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <Card className="p-8 text-center text-sm text-slate-600">
+              No questions match the selected filter.
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {filteredItems.map(({ ans, num }) => (
+                <AnswerReviewCard key={ans.question_id} ans={ans} questionNumber={num} />
+              ))}
+            </div>
+          )}
 
-                  <p className="text-base font-semibold text-slate-900">{ans.question_text}</p>
+          {/* Bottom Navigation Bar (Figma Screen 5 -> Screen 6 Flow) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#dce6df] pt-5">
+            <Link
+              to="/roadmap"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-[#f4f8f5]"
+            >
+              <Compass aria-hidden="true" className="h-4 w-4 text-[#14532d]" />
+              <span>Open Learning Roadmap</span>
+            </Link>
 
-                  {ans.code_snippet ? <CodeSnippetBlock code={ans.code_snippet} /> : null}
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {options.map(([letter, text]) => {
-                      const isCorrectOpt = ans.correct_option === letter;
-                      const isStudentChoice = ans.selected_option === letter;
-
-                      return (
-                        <div
-                          key={letter}
-                          className={cn(
-                            'rounded-lg border px-3.5 py-2.5 text-sm',
-                            isCorrectOpt
-                              ? 'border-emerald-400 bg-emerald-50/80 font-semibold text-emerald-950'
-                              : isStudentChoice
-                                ? 'border-red-300 bg-red-50/80 font-semibold text-red-900'
-                                : 'border-slate-200 bg-white text-slate-700',
-                          )}
-                        >
-                          <span className="mr-2 font-bold">{letter}.</span>
-                          {text}
-                          {isCorrectOpt ? ' (Correct Answer)' : ''}
-                          {isStudentChoice && !isCorrectOpt ? ' (Your Answer)' : ''}
-                          {isStudentChoice && isCorrectOpt ? ' (Your Answer)' : ''}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-slate-800">
-                    <p className="font-semibold text-blue-950">Solution &amp; Explanation</p>
-                    <p className="mt-1 leading-relaxed">{ans.explanation}</p>
-                  </div>
-                </Card>
-              );
-            })}
+            <Link
+              to={`/recommendations?attemptId=${attempt.attempt_id}`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#14532d] px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[#0f3f22]"
+            >
+              <span>View Placement Results &amp; Recommendations</span>
+              <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       )}

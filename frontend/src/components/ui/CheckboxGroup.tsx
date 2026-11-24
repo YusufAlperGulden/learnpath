@@ -73,10 +73,10 @@ export function CheckboxGroup<T extends string>({
                 htmlFor={inputId}
                 className={cn(
                   'flex min-h-14 cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors',
-                  'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600',
+                  'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#14532d]',
                   checked
-                    ? 'border-blue-600 bg-blue-50/70 text-slate-900'
-                    : 'border-slate-300 bg-white text-slate-800 hover:border-slate-400',
+                    ? 'border-[#14532d] bg-[#edf6f0] text-slate-900 shadow-xs'
+                    : 'border-slate-200 bg-white text-slate-800 hover:border-[#14532d]/40 hover:bg-[#f8fbf9]',
                 )}
               >
                 <span
@@ -84,8 +84,8 @@ export function CheckboxGroup<T extends string>({
                   className={cn(
                     'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border',
                     checked
-                      ? 'border-blue-600 bg-blue-600 text-white'
-                      : 'border-slate-400 bg-white',
+                      ? 'border-[#14532d] bg-[#14532d] text-white'
+                      : 'border-slate-300 bg-white',
                   )}
                 >
                   {checked ? <Check className="h-3.5 w-3.5" /> : null}

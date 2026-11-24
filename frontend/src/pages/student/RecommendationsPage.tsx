@@ -1,22 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import {
   AlertCircle,
+  ArrowRight,
   Bookmark,
   CheckCircle2,
+  Code2,
   ExternalLink,
+  FileText,
   GraduationCap,
+  PlayCircle,
   Sparkles,
   Star,
 } from 'lucide-react';
@@ -27,7 +22,7 @@ import {
   type FeedbackTarget,
 } from '../../components/student/FeedbackModal';
 import { Badge, Button, Card, cn } from '../../components/ui';
-import type { RecommenderStrategy } from '../../types/api';
+import type { ContentType, MasteryStatus, RecommenderStrategy } from '../../types/api';
 
 const VALID_STRATEGIES: RecommenderStrategy[] = [
   'hybrid',
@@ -59,16 +54,23 @@ function describeFallbackReason(reason: string | null): string {
     : 'Format, prerequisite, or cold-start fallback was applied to ensure relevant study options.';
 }
 
+function FormatIcon({ type, className }: { type: ContentType; className?: string }) {
+  if (type === 'VIDEO') return <PlayCircle aria-hidden="true" className={className} />;
+  if (type === 'EXERCISE') return <Code2 aria-hidden="true" className={className} />;
+  return <FileText aria-hidden="true" className={className} />;
+}
+
 export function RecommendationsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTopicId = searchParams.get('topicId') || '';
   const selectedStrategy = parseStrategyParam(searchParams.get('strategy'));
   const includeCompleted = searchParams.get('revision') === '1';
+  const requestedAttemptId = searchParams.get('attemptId');
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
 
   useEffect(() => {
-    document.title = 'Explainable Recommendations | LearnPath';
+    document.title = 'Placement Results & Recommendations | LearnPath';
   }, []);
 
   const { data: pathData } = useQuery({
@@ -76,12 +78,25 @@ export function RecommendationsPage() {
     queryFn: studentApi.getLearningPath,
   });
 
+  const { data: attempts = [] } = useQuery({
+    queryKey: ['attempts'],
+    queryFn: studentApi.listAttempts,
+  });
+
+  const targetAttemptId = requestedAttemptId || attempts[0]?.attempt_id || '';
+
+  const { data: attemptDetail } = useQuery({
+    queryKey: ['attempt-detail', targetAttemptId],
+    queryFn: () => studentApi.getAttemptDetail(targetAttemptId),
+    enabled: Boolean(targetAttemptId),
+  });
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['recommendations', selectedStrategy, selectedTopicId, includeCompleted],
     queryFn: () =>
       studentApi.getRecommendations({
         strategy: selectedStrategy,
-        limit: 5,
+        limit: 6,
         topic_id: selectedTopicId || undefined,
         include_completed: includeCompleted || undefined,
       }),
@@ -96,6 +111,7 @@ export function RecommendationsPage() {
     if (nextTopicId) next.topicId = nextTopicId;
     if (nextStrategy !== 'hybrid') next.strategy = nextStrategy;
     if (nextRevision) next.revision = '1';
+    if (requestedAttemptId) next.attemptId = requestedAttemptId;
     setSearchParams(next);
   };
 
@@ -135,28 +151,221 @@ export function RecommendationsPage() {
   });
 
   const nodes = pathData?.nodes ?? [];
-  const priorityChartData = (data?.priority_topics ?? []).map((pt) => ({
-    name: pt.name,
-    score_percent: pt.score_percent ?? 0,
-  }));
+
+  const overallScore = useMemo(() => {
+    if (attemptDetail) return Math.round(attemptDetail.overall_score_percent);
+    if (nodes.length > 0) {
+      const mastered = nodes.filter((n) => n.mastery_status === 'MASTERED').length;
+      return Math.round((mastered / nodes.length) * 100);
+    }
+    return 0;
+  }, [attemptDetail, nodes]);
+
+  const donutData = useMemo(
+    () => [
+      { name: 'Score', value: Math.max(overallScore, 0), color: '#14532d' },
+      { name: 'Remaining', value: Math.max(100 - overallScore, 0), color: '#dfeae3' },
+    ],
+    [overallScore],
+  );
+
+  const topicBreakdown = useMemo(() => {
+    if (attemptDetail && attemptDetail.topic_scores.length > 0) {
+      return attemptDetail.topic_scores.map((ts) => ({
+        topic_id: ts.topic_id,
+        name: ts.topic_name,
+        percent: Math.round(ts.score_percent),
+        status: ts.mastery_status,
+      }));
+    }
+    return nodes.map((n) => ({
+      topic_id: n.topic_id,
+      name: n.name,
+      percent: Math.round(
+        n.latest_score_percent ?? (n.mastery_status === 'MASTERED' ? 100 : 0),
+      ),
+      status: n.mastery_status as MasteryStatus,
+    }));
+  }, [attemptDetail, nodes]);
 
   return (
     <AppLayout
-      pageTitle="Personalized Resource Recommendations"
-      pageSubtitle="Prerequisite-aware study resources ranked with transparent explanations, bookmarking, completion tracking, and 1–5 ratings (FR05–FR09)."
+      variant="focused"
+      showInlineNav
+      eyebrow="Your Personalized Starting Point"
+      pageTitle="A clearer path to Python confidence."
+      pageSubtitle="Review your placement breakdown and study explainable resources tailored to your unlocked priority gaps."
     >
-      <Card className="mb-6 flex flex-wrap items-end justify-between gap-4 p-4">
+      {/* Top 2-Column Placement Results & Topic Breakdown Row (Figma Screen 6) */}
+      <div className="mb-7 grid gap-5 lg:grid-cols-12">
+        {/* Left Card: Placement Test Results Donut */}
+        <Card className="flex flex-col justify-between rounded-2xl border-[#dce6df] p-6 lg:col-span-5">
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-bold text-slate-900">Placement Test Results</h2>
+              {attemptDetail ? (
+                <Badge tone={overallScore >= 70 ? 'success' : 'info'}>
+                  {attemptDetail.test_type === 'DIAGNOSTIC' ? 'Placement' : 'Topic Quiz'}
+                </Badge>
+              ) : (
+                <Badge tone="warning">Unassessed</Badge>
+              )}
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Overall Score: <strong className="text-slate-800">{overallScore} / 100</strong>
+            </p>
+          </div>
+
+          <figure className="my-4 flex flex-wrap items-center gap-5">
+            <div className="relative h-28 w-28 shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={donutData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={36}
+                    outerRadius={50}
+                    startAngle={90}
+                    endAngle={-270}
+                    stroke="none"
+                  >
+                    {donutData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="text-xl font-extrabold text-[#14532d]">{overallScore}%</span>
+              </div>
+            </div>
+
+            <div className="min-w-[160px] flex-1 space-y-1.5">
+              <span className="inline-flex items-center rounded-full bg-[#e6f2eb] px-2.5 py-0.5 text-xs font-semibold text-[#14532d]">
+                {attemptDetail
+                  ? overallScore >= 70
+                    ? 'A strong foundation'
+                    : 'Priority focus identified'
+                  : 'Ready for calibration'}
+              </span>
+              <p className="text-xs leading-relaxed text-slate-600">
+                {attemptDetail
+                  ? 'Topics scoring >= 70% are mastered; unlocked gaps below 70% are prioritized first.'
+                  : 'Take the diagnostic placement test anytime to calibrate your exact topic scores.'}
+              </p>
+            </div>
+            <figcaption className="visually-hidden">
+              Overall placement test score is {overallScore} percent.
+            </figcaption>
+          </figure>
+
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-xs">
+            {attemptDetail ? (
+              <Link
+                to={`/assessment/attempts/${attemptDetail.attempt_id}`}
+                className="font-semibold text-[#14532d] hover:underline"
+              >
+                Review detailed gap analysis &rarr;
+              </Link>
+            ) : (
+              <Link
+                to="/assessment"
+                className="font-semibold text-[#14532d] hover:underline"
+              >
+                Take placement test &rarr;
+              </Link>
+            )}
+          </div>
+        </Card>
+
+        {/* Right Card: Topic Based Breakdown Horizontal Bars */}
+        <Card className="rounded-2xl border-[#dce6df] p-6 lg:col-span-7">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Topic Based Breakdown</h2>
+              <p className="text-xs text-slate-500">70% threshold required for exam mastery</p>
+            </div>
+            <Link
+              to="/profile/setup"
+              className="text-xs font-semibold text-[#14532d] hover:underline"
+            >
+              Adjust preferences
+            </Link>
+          </div>
+
+          {topicBreakdown.length === 0 ? (
+            <p className="py-6 text-sm text-slate-600">No curriculum topics available yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {topicBreakdown.map((tb) => {
+                const isMastered = tb.status === 'MASTERED' || tb.percent >= 70;
+                const isPriority = tb.percent < 50 && !isMastered;
+                const barClass = isMastered
+                  ? 'bg-[#14532d]'
+                  : isPriority
+                    ? 'bg-amber-500'
+                    : 'bg-[#5c9a76]';
+                const statusLabel = isMastered
+                  ? 'Mastered'
+                  : tb.status === 'NEEDS_PRACTICE'
+                    ? 'Needs Practice'
+                    : 'Priority Focus';
+
+                return (
+                  <li key={tb.topic_id} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold text-slate-800">{tb.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-700">{tb.percent}%</span>
+                        <span
+                          className={cn(
+                            'text-[11px] font-semibold',
+                            isMastered
+                              ? 'text-[#14532d]'
+                              : isPriority
+                                ? 'text-amber-700'
+                                : 'text-slate-600',
+                          )}
+                        >
+                          · {statusLabel}
+                        </span>
+                        <Link
+                          to={`/assessment?type=TOPIC_QUIZ&topicId=${tb.topic_id}`}
+                          aria-label={`Start Topic Quiz for ${tb.name}`}
+                          className="rounded bg-[#e6f2eb] px-2 py-0.5 text-[10px] font-bold text-[#14532d] hover:bg-[#d3e7db]"
+                        >
+                          Quiz
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3ece6]">
+                      <div
+                        className={cn('h-full rounded-full transition-all', barClass)}
+                        style={{ width: `${Math.min(Math.max(tb.percent, 4), 100)}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      {/* Compact Strategy & Topic Controls Bar (Preserves 5-Method Selector & Revision Toggle) */}
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#dce6df] bg-white p-4">
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1">
             <label htmlFor="rec-topic-filter" className="text-xs font-semibold text-slate-700">
-              Focus topic (or automatic gap priority)
+              Focus topic
             </label>
             <select
               id="rec-topic-filter"
               name="topic_id"
               value={selectedTopicId}
               onChange={(e) => updateFilterParams(e.target.value, selectedStrategy)}
-              className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+              className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900"
             >
               <option value="">Automatic Priority Topics (Recommended)</option>
               {nodes.map((n) => (
@@ -169,7 +378,7 @@ export function RecommendationsPage() {
 
           <div className="flex flex-col gap-1">
             <label htmlFor="rec-strategy-select" className="text-xs font-semibold text-slate-700">
-              Ranking model (5-method architecture)
+              Ranking model (5-method engine)
             </label>
             <select
               id="rec-strategy-select"
@@ -178,7 +387,7 @@ export function RecommendationsPage() {
               onChange={(e) =>
                 updateFilterParams(selectedTopicId, e.target.value as RecommenderStrategy)
               }
-              className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+              className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900"
             >
               <option value="hybrid">Weighted Hybrid (CBF + CF, Default)</option>
               <option value="cbf">Content-Based Filtering (TF-IDF)</option>
@@ -188,11 +397,7 @@ export function RecommendationsPage() {
             </select>
           </div>
 
-          <div className="flex items-center gap-2 pb-1">
-            <Badge tone="info">Served Strategy: {data?.strategy_used ?? selectedStrategy}</Badge>
-          </div>
-
-          <div className="flex items-center gap-2 pb-1">
+          <div className="flex items-center gap-2 pb-1.5">
             <input
               id="rec-include-completed"
               name="include_completed"
@@ -201,7 +406,7 @@ export function RecommendationsPage() {
               onChange={(e) =>
                 updateFilterParams(selectedTopicId, selectedStrategy, e.target.checked)
               }
-              className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-blue-600"
+              className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-[#14532d]"
             />
             <label
               htmlFor="rec-include-completed"
@@ -212,21 +417,16 @@ export function RecommendationsPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Badge tone="info">Served: {data?.strategy_used ?? selectedStrategy}</Badge>
           <Link
             to="/bookmarks"
-            className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
+            className="text-xs font-semibold text-[#14532d] hover:underline"
           >
-            Open Saved &amp; Study History
-          </Link>
-          <Link
-            to="/profile/setup"
-            className="text-xs font-semibold text-blue-600 hover:underline"
-          >
-            Adjust preferences
+            Saved library
           </Link>
         </div>
-      </Card>
+      </div>
 
       {data?.fallback_applied ? (
         <div
@@ -243,229 +443,226 @@ export function RecommendationsPage() {
         </div>
       ) : null}
 
-      {data && data.priority_topics.length > 0 ? (
-        <div className="mb-6 grid gap-6 lg:grid-cols-3">
-          <Card className="space-y-3">
-            <h2 className="text-sm font-semibold text-slate-900">Current Priority Topics</h2>
-            <ul className="space-y-2.5">
-              {data.priority_topics.map((pt) => (
-                <li
-                  key={pt.topic_id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs"
+      {/* Recommended Resources For You — 3-Column Card Grid (Figma Screen 6) */}
+      <section aria-labelledby="rec-grid-heading" className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 id="rec-grid-heading" className="text-lg font-bold text-slate-900">
+            Recommended Resources For You
+          </h2>
+          <span className="text-xs font-medium text-slate-500">
+            {data?.items.length ? `Top ${data.items.length} matches` : ''}
+          </span>
+        </div>
+
+        {isLoading ? (
+          <Card className="p-10 text-center text-sm text-slate-600">
+            Ranking personalized learning resources...
+          </Card>
+        ) : isError ? (
+          <Card
+            role="alert"
+            className="space-y-3 border-red-200 bg-red-50 p-6 text-center text-sm text-red-900"
+          >
+            <p className="font-semibold">
+              Could not load recommendations right now. Your saved assessments and progress are
+              safe.
+            </p>
+            <div>
+              <Button size="sm" variant="primary" onClick={() => void refetch()}>
+                Retry Recommendations
+              </Button>
+            </div>
+          </Card>
+        ) : !data || data.items.length === 0 ? (
+          <Card className="space-y-3 p-8 text-center text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">
+              No unseen active resources remain for your current filter and language preference.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3 pt-1">
+              {!includeCompleted ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => updateFilterParams(selectedTopicId, selectedStrategy, true)}
                 >
-                  <div>
-                    <p className="font-semibold text-slate-900">{pt.name}</p>
-                    <p className="text-slate-600">
-                      Latest score:{' '}
-                      {pt.score_percent !== null ? `${pt.score_percent.toFixed(0)}%` : 'Unassessed'}
+                  Offer Completed Resources for Revision
+                </Button>
+              ) : null}
+              <Link
+                to="/profile/setup"
+                className="inline-flex min-h-9 items-center rounded-lg bg-[#14532d] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0f3f22]"
+              >
+                Revise Profile Preferences
+              </Link>
+            </div>
+          </Card>
+        ) : (
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {data.items.map((item) => {
+              const bookmarked = Boolean(item.is_bookmarked);
+              return (
+                <Card
+                  key={item.resource_id}
+                  className="flex flex-col justify-between rounded-2xl border-[#dce6df] p-5 shadow-xs"
+                >
+                  <div className="space-y-3">
+                    {/* Card Header: Green Icon Square + Format Badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e6f2eb] text-[#14532d]">
+                          <FormatIcon type={item.content_type} className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-[11px] font-bold text-[#14532d]">{item.topic_name}</p>
+                          <p className="text-[11px] text-slate-500">
+                            #{item.rank} · {item.language.toUpperCase()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Badge tone="info">{item.content_type}</Badge>
+                        {item.format_fallback_used ? (
+                          <Badge tone="warning">Format Relaxed</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Title & Description */}
+                    <div>
+                      <h3 className="text-base font-bold leading-snug text-slate-900">
+                        {item.title}
+                      </h3>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-600">
+                        {item.description}
+                      </p>
+                    </div>
+
+                    {/* Metadata & Status Badges */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span>
+                        {item.estimated_minutes ? `${item.estimated_minutes} min · ` : ''}
+                        {item.difficulty.charAt(0) + item.difficulty.slice(1).toLowerCase()}
+                      </span>
+                      {item.progress_status === 'OPENED' ? (
+                        <Badge tone="info">OPENED</Badge>
+                      ) : item.progress_status === 'COMPLETED' ? (
+                        <Badge tone="success">COMPLETED</Badge>
+                      ) : null}
+                      {item.my_rating ? <Badge tone="warning">{item.my_rating}★</Badge> : null}
+                    </div>
+
+                    {/* Action Row */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <a
+                        href={item.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Study resource ${item.title}`}
+                        onClick={() => openMutation.mutate(item.resource_id)}
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-[#14532d] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0f3f22]"
+                      >
+                        <span>Open Resource</span>
+                        <ExternalLink aria-hidden="true" className="h-3 w-3" />
+                      </a>
+
+                      <button
+                        type="button"
+                        aria-label={`Mark ${item.title} as completed`}
+                        onClick={() => completeMutation.mutate(item.resource_id)}
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#14532d]/40 hover:bg-[#f4f8f5]"
+                      >
+                        <CheckCircle2
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5 text-[#14532d]"
+                        />
+                        <span>Done</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-pressed={bookmarked}
+                        aria-label={`${bookmarked ? 'Remove bookmark' : 'Save bookmark'} for ${item.title}`}
+                        onClick={() =>
+                          bookmarkMutation.mutate({
+                            resourceId: item.resource_id,
+                            isBookmarked: bookmarked,
+                          })
+                        }
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#14532d]/40 hover:bg-[#f4f8f5]"
+                      >
+                        <Bookmark
+                          aria-hidden="true"
+                          className={cn(
+                            'h-3.5 w-3.5',
+                            bookmarked ? 'fill-[#14532d] text-[#14532d]' : 'text-slate-500',
+                          )}
+                        />
+                        <span>{bookmarked ? 'Saved' : 'Save'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-label={`Rate ${item.title}`}
+                        onClick={() =>
+                          setFeedbackTarget({
+                            resource_id: item.resource_id,
+                            title: item.title,
+                            initialRating: item.my_rating,
+                            initialComment: item.my_comment,
+                          })
+                        }
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#14532d]/40 hover:bg-[#f4f8f5]"
+                      >
+                        <Star aria-hidden="true" className="h-3.5 w-3.5 text-amber-500" />
+                        <span>{item.my_rating ? `${item.my_rating}★` : 'Rate'}</span>
+                      </button>
+
+                      <Link
+                        to={`/assessment?type=TOPIC_QUIZ&topicId=${item.topic_id}`}
+                        aria-label={`Verify mastery quiz for ${item.topic_name}`}
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#14532d]/40 hover:bg-[#f4f8f5]"
+                      >
+                        <GraduationCap aria-hidden="true" className="h-3.5 w-3.5" />
+                        <span>Quiz</span>
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* Green Rationale Footer Box (Figma Screen 6) */}
+                  <div className="mt-4 flex items-start gap-2 rounded-xl border border-[#b9d8c5] bg-[#edf6f0] p-3 text-xs text-slate-800">
+                    <Sparkles
+                      aria-hidden="true"
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#14532d]"
+                    />
+                    <p className="leading-relaxed">
+                      <strong className="font-semibold text-[#14532d]">Why recommended: </strong>
+                      {item.rationale}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={pt.mastery_status === 'MASTERED' ? 'success' : 'warning'}>
-                      {pt.mastery_status}
-                    </Badge>
-                    <Link
-                      to={`/assessment?type=TOPIC_QUIZ&topicId=${pt.topic_id}`}
-                      aria-label={`Start Topic Quiz for ${pt.name}`}
-                      className="rounded bg-blue-600 px-2.5 py-1 font-semibold text-white hover:bg-blue-700"
-                    >
-                      Quiz
-                    </Link>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <Card className="lg:col-span-2">
-            <figure>
-              <figcaption className="mb-2 text-sm font-semibold text-slate-900">
-                Priority Topic Proficiency vs. 70% Mastery Gate
-              </figcaption>
-              <div className="h-44 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={priorityChartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
-                    <Tooltip />
-                    <ReferenceLine y={70} stroke="#059669" strokeDasharray="4 4" />
-                    <Bar dataKey="score_percent" name="Score %" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </figure>
-          </Card>
-        </div>
-      ) : null}
-
-      {isLoading ? (
-        <Card className="p-8 text-center text-sm text-slate-600">
-          Ranking personalized learning resources...
-        </Card>
-      ) : isError ? (
-        <Card role="alert" className="space-y-3 border-red-200 bg-red-50 p-6 text-center text-sm text-red-900">
-          <p className="font-semibold">
-            Could not load recommendations right now. Your saved assessments and progress are safe.
-          </p>
-          <div>
-            <Button size="sm" variant="primary" onClick={() => void refetch()}>
-              Retry Recommendations
-            </Button>
+                </Card>
+              );
+            })}
           </div>
-        </Card>
-      ) : !data || data.items.length === 0 ? (
-        <Card className="space-y-3 p-8 text-center text-sm text-slate-700">
-          <p className="font-semibold text-slate-900">
-            No unseen active resources remain for your current filter and language preference.
+        )}
+      </section>
+
+      {/* Bottom Mint Learning Path CTA Banner (Figma Screen 6) */}
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#c6ded0] bg-[#e6f2eb] px-6 py-4">
+        <div>
+          <p className="text-sm font-bold text-[#14532d]">Your learning path is ready.</p>
+          <p className="text-xs text-slate-700">
+            Explore your prerequisite-aware Python curriculum graph and track dual progress.
           </p>
-          <div className="flex flex-wrap justify-center gap-3 pt-1">
-            {!includeCompleted ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateFilterParams(selectedTopicId, selectedStrategy, true)}
-              >
-                Offer Completed Resources for Revision
-              </Button>
-            ) : null}
-            <Link
-              to="/profile/setup"
-              className="inline-flex min-h-9 items-center rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-            >
-              Revise Profile Preferences
-            </Link>
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {data.items.map((item) => {
-            const bookmarked = Boolean(item.is_bookmarked);
-            return (
-              <Card key={item.resource_id} className="space-y-3.5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="neutral">#{item.rank}</Badge>
-                    <Badge tone="info">{item.topic_name}</Badge>
-                    <Badge tone="neutral">{item.content_type}</Badge>
-                    <Badge
-                      tone={
-                        item.difficulty === 'BEGINNER'
-                          ? 'success'
-                          : item.difficulty === 'INTERMEDIATE'
-                            ? 'info'
-                            : 'warning'
-                      }
-                    >
-                      {item.difficulty}
-                    </Badge>
-                    <span className="text-xs font-medium text-slate-500">
-                      {item.language.toUpperCase()}
-                      {item.estimated_minutes ? ` · ${item.estimated_minutes} min` : ''}
-                    </span>
-                    {item.progress_status === 'OPENED' ? (
-                      <Badge tone="info">OPENED</Badge>
-                    ) : item.progress_status === 'COMPLETED' ? (
-                      <Badge tone="success">COMPLETED · Revision</Badge>
-                    ) : null}
-                    {item.format_fallback_used ? (
-                      <Badge tone="warning">Format Relaxed</Badge>
-                    ) : null}
-                    {item.my_rating ? (
-                      <Badge tone="warning">{item.my_rating}/5 ★</Badge>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <a
-                      href={item.external_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`Study resource ${item.title}`}
-                      onClick={() => openMutation.mutate(item.resource_id)}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      Study Resource
-                      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                    </a>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Mark ${item.title} as completed`}
-                      onClick={() => completeMutation.mutate(item.resource_id)}
-                    >
-                      <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" />
-                      Mark Completed
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-pressed={bookmarked}
-                      aria-label={`${bookmarked ? 'Remove bookmark' : 'Save bookmark'} for ${item.title}`}
-                      onClick={() =>
-                        bookmarkMutation.mutate({
-                          resourceId: item.resource_id,
-                          isBookmarked: bookmarked,
-                        })
-                      }
-                    >
-                      <Bookmark
-                        aria-hidden="true"
-                        className={cn(
-                          'h-3.5 w-3.5',
-                          bookmarked ? 'fill-blue-600 text-blue-600' : 'text-slate-600',
-                        )}
-                      />
-                      {bookmarked ? 'Saved' : 'Save'}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Rate ${item.title}`}
-                      onClick={() =>
-                        setFeedbackTarget({
-                          resource_id: item.resource_id,
-                          title: item.title,
-                          initialRating: item.my_rating,
-                          initialComment: item.my_comment,
-                        })
-                      }
-                    >
-                      <Star aria-hidden="true" className="h-3.5 w-3.5 text-amber-500" />
-                      {item.my_rating ? `${item.my_rating}★` : 'Rate'}
-                    </Button>
-
-                    <Link
-                      to={`/assessment?type=TOPIC_QUIZ&topicId=${item.topic_id}`}
-                      aria-label={`Verify mastery quiz for ${item.topic_name}`}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
-                    >
-                      <GraduationCap aria-hidden="true" className="h-3.5 w-3.5" />
-                      Quiz
-                    </Link>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">{item.title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{item.description}</p>
-                </div>
-
-                <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-xs text-slate-800">
-                  <Sparkles aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
-                  <div>
-                    <span className="font-semibold text-blue-950">Why this was recommended: </span>
-                    {item.rationale}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
         </div>
-      )}
+        <Link
+          to="/roadmap"
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#14532d] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#0f3f22]"
+        >
+          <span>View Learning Path</span>
+          <ArrowRight aria-hidden="true" className="h-4 w-4" />
+        </Link>
+      </div>
 
       <FeedbackModal target={feedbackTarget} onClose={() => setFeedbackTarget(null)} />
     </AppLayout>

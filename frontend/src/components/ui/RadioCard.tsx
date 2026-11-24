@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { Check } from 'lucide-react';
 import { cn } from './cn';
 
 export interface RadioCardOption<T extends string> {
@@ -52,11 +53,11 @@ export function RadioCardGroup<T extends string>({
               <label
                 htmlFor={inputId}
                 className={cn(
-                  'flex min-h-14 cursor-pointer flex-col justify-between rounded-xl border p-4 transition-colors',
-                  'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600',
+                  'flex min-h-16 cursor-pointer flex-col justify-between rounded-xl border p-4 transition-colors',
+                  'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#14532d]',
                   selected
-                    ? 'border-blue-600 bg-blue-50/70 text-slate-900'
-                    : 'border-slate-300 bg-white text-slate-800 hover:border-slate-400',
+                    ? 'border-[#14532d] bg-[#edf6f0] text-slate-900 shadow-xs'
+                    : 'border-slate-200 bg-white text-slate-800 hover:border-[#14532d]/40 hover:bg-[#f8fbf9]',
                 )}
               >
                 <span className="flex items-center justify-between gap-2">
@@ -64,10 +65,14 @@ export function RadioCardGroup<T extends string>({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      'h-4 w-4 rounded-full border-2',
-                      selected ? 'border-blue-600 bg-blue-600' : 'border-slate-400 bg-white',
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+                      selected
+                        ? 'border-[#14532d] bg-[#14532d] text-white'
+                        : 'border-slate-300 bg-white',
                     )}
-                  />
+                  >
+                    {selected ? <Check className="h-3 w-3" /> : null}
+                  </span>
                 </span>
                 {opt.description ? (
                   <span className="mt-1.5 text-xs text-slate-600">{opt.description}</span>

@@ -69,8 +69,8 @@ export function AdminTopicsSection({ topics, isLoading }: AdminTopicsSectionProp
       style: {
         borderRadius: '12px',
         padding: '10px 12px',
-        border: '2px solid #2563eb',
-        background: '#ffffff',
+        border: '2px solid #14532d',
+        background: '#f6fbf8',
         color: '#0f172a',
         fontWeight: 600,
         fontSize: '12px',

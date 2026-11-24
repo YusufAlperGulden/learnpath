@@ -114,7 +114,7 @@ export function FeedbackModal({ target, onClose }: FeedbackModalProps) {
                     htmlFor={inputId}
                     className={cn(
                       'inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border p-2 transition-colors',
-                      'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600',
+                      'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#14532d]',
                       filled
                         ? 'border-amber-400 bg-amber-50 text-amber-600'
                         : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400',

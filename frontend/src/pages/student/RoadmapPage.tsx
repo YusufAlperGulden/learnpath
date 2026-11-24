@@ -65,14 +65,14 @@ export function RoadmapPage() {
           border: topic.is_locked
             ? '2px dashed #94a3b8'
             : topic.mastery_status === 'MASTERED'
-              ? '2px solid #059669'
-              : '2px solid #2563eb',
+              ? '2px solid #14532d'
+              : '2px solid #4d8b68',
           background: topic.is_locked
             ? '#f8fafc'
             : topic.mastery_status === 'MASTERED'
-              ? '#ecfdf5'
+              ? '#e6f2eb'
               : topic.is_manually_completed
-                ? '#eff6ff'
+                ? '#f2f8f4'
                 : '#ffffff',
           color: '#0f172a',
           fontWeight: 600,
@@ -185,7 +185,7 @@ export function RoadmapPage() {
                           completed: e.target.checked,
                         })
                       }
-                      className="mt-0.5 h-5 w-5 cursor-pointer rounded border-slate-400 accent-blue-600"
+                      className="mt-0.5 h-5 w-5 cursor-pointer rounded border-slate-400 accent-[#14532d]"
                     />
                     <label
                       htmlFor={manualCheckboxId}
@@ -218,7 +218,7 @@ export function RoadmapPage() {
               <div className="space-y-2 pt-2">
                 <Link
                   to={`/recommendations?topicId=${inspectedNode.topic_id}`}
-                  className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                  className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#14532d] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0f3f22]"
                 >
                   <BookOpen aria-hidden="true" className="h-4 w-4" />
                   {inspectedNode.is_locked
