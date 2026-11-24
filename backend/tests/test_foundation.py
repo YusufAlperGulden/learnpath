@@ -303,3 +303,25 @@ def test_answer_key_confidentiality_and_test_session_token_binding() -> None:
     access_token = create_access_token(user_id=student_id, role=UserRole.STUDENT)
     with pytest.raises(TokenValidationError):
         decode_test_session_token(access_token)
+
+
+def test_seeded_local_demo_accounts_can_log_in_via_http(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    from scripts.seed_data import seed_database
+
+    seed_database(db_session)
+
+    for email, password, expected_role in (
+        ("student@learnpath.local", "StudentPass123!", "STUDENT"),
+        ("admin@learnpath.local", "AdminPass123!", "ADMIN"),
+    ):
+        res = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password},
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["user"]["email"] == email
+        assert body["user"]["role"] == expected_role

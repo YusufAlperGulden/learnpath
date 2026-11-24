@@ -21,3 +21,18 @@ apiClient.interceptors.request.use((config) => {
   }
   return config;
 });
+
+export function extractApiErrorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: string; loc?: (string | number)[] };
+    if (first?.msg) {
+      const field = first.loc ? first.loc.slice(1).join('.') : '';
+      return field ? `${field}: ${first.msg}` : first.msg;
+    }
+  }
+  return fallback;
+}
