@@ -31,6 +31,7 @@ router = APIRouter(
 
 
 @router.get("/questions", response_model=AssessmentQuestionsResponse)
+@router.get("/start", response_model=AssessmentQuestionsResponse, include_in_schema=False)
 def get_assessment_questions(
     current_student: Annotated[User, Depends(require_student)],
     db: Annotated[Session, Depends(get_db)],
