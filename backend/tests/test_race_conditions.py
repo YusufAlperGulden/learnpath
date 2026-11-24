@@ -74,3 +74,67 @@ def test_idempotent_seed_short_circuits_without_rehashing(
     assert second.cohort_students == 48
     assert second.total_feedback_rows == first.total_feedback_rows
 
+
+def test_cbf_unseen_candidate_scoring_does_not_mutate_shared_matrix() -> None:
+    from uuid import uuid4
+
+    from app.core.enums import (
+        ContentType,
+        DifficultyLevel,
+        ExperienceLevel,
+        SupportedLanguage,
+    )
+    from app.services.recommenders.base import (
+        CandidateResource,
+        StudentRecommendationContext,
+    )
+    from app.services.recommenders.cbf import ContentBasedRecommender
+
+    topic_id = uuid4()
+    base_res = CandidateResource(
+        resource_id=uuid4(),
+        topic_id=topic_id,
+        topic_name="Variables & Data Types",
+        topic_display_order=1,
+        title="Python Variables Visual Guide",
+        description="Step by step introduction to Python types, integers, and strings.",
+        content_type=ContentType.VIDEO,
+        difficulty=DifficultyLevel.BEGINNER,
+        language=SupportedLanguage.EN,
+        estimated_minutes=15,
+        external_url="https://example.com/vars",
+    )
+    unseen_res = CandidateResource(
+        resource_id=uuid4(),
+        topic_id=topic_id,
+        topic_name="Variables & Data Types",
+        topic_display_order=1,
+        title="Dynamic Python Strings Exercise",
+        description="Hands-on practice with Python strings and numeric precision.",
+        content_type=ContentType.EXERCISE,
+        difficulty=DifficultyLevel.BEGINNER,
+        language=SupportedLanguage.EN,
+        estimated_minutes=20,
+        external_url="https://example.com/strings",
+    )
+    cbf = ContentBasedRecommender().fit([base_res])
+    assert cbf._tfidf_matrix is not None
+    original_rows = cbf._tfidf_matrix.shape[0]
+    original_keys = set(cbf._index_by_resource_id.keys())
+
+    ctx = StudentRecommendationContext(
+        student_id=uuid4(),
+        experience_level=ExperienceLevel.BEGINNER,
+        learning_goal="PYTHON_FUNDAMENTALS",
+        preferred_formats=[ContentType.VIDEO, ContentType.EXERCISE],
+        preferred_language=SupportedLanguage.EN,
+    )
+    scores = cbf.compute_cbf_scores([base_res, unseen_res], ctx)
+    assert base_res.resource_id in scores
+    assert unseen_res.resource_id in scores
+    assert 0.0 <= scores[unseen_res.resource_id][0] <= 1.0
+    # Cached matrix and index map remain immutable for safe multi-threaded sharing
+    assert cbf._tfidf_matrix.shape[0] == original_rows
+    assert set(cbf._index_by_resource_id.keys()) == original_keys
+
+

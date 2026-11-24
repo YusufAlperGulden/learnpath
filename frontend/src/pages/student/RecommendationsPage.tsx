@@ -488,7 +488,11 @@ export function RecommendationsPage() {
             Recommended Resources For You
           </h2>
           <span className="text-xs font-medium text-slate-500">
-            {data?.items.length ? `Top ${data.items.length} matches` : ''}
+            {data?.items.length
+              ? keywordQuery
+                ? `${visibleItems.length} of ${data.items.length} matches`
+                : `Top ${data.items.length} matches`
+              : ''}
           </span>
         </div>
 

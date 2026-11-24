@@ -1,6 +1,7 @@
 """Prerequisite-aware learning path and 5-strategy explainable recommendation service."""
 
 import json
+import threading
 import time
 from pathlib import Path
 from uuid import UUID
@@ -57,14 +58,16 @@ HYBRID_TUNING_ARTIFACT = (
 _rule_recommender = RuleBasedRecommender()
 
 # In-memory TF-IDF cache invalidated automatically on admin catalog mutations (NFR-05 < 200ms)
+_cbf_cache_lock = threading.Lock()
 _cached_cbf: ContentBasedRecommender | None = None
 _cached_cbf_signature: tuple[int, tuple[str, ...]] | None = None
 
 
 def invalidate_tfidf_cache() -> None:
     global _cached_cbf, _cached_cbf_signature
-    _cached_cbf = None
-    _cached_cbf_signature = None
+    with _cbf_cache_lock:
+        _cached_cbf = None
+        _cached_cbf_signature = None
 
 
 register_catalog_invalidation_hook(invalidate_tfidf_cache)
@@ -84,8 +87,9 @@ def _get_or_fit_cached_cbf(db: Session) -> ContentBasedRecommender:
         get_catalog_generation(),
         tuple(str(r.resource_id) for r in active_rows),
     )
-    if _cached_cbf is not None and _cached_cbf_signature == sig:
-        return _cached_cbf
+    with _cbf_cache_lock:
+        if _cached_cbf is not None and _cached_cbf_signature == sig:
+            return _cached_cbf
 
     corpus = [
         CandidateResource(
@@ -104,8 +108,9 @@ def _get_or_fit_cached_cbf(db: Session) -> ContentBasedRecommender:
         for r in active_rows
     ]
     cbf = ContentBasedRecommender().fit(corpus)
-    _cached_cbf = cbf
-    _cached_cbf_signature = sig
+    with _cbf_cache_lock:
+        _cached_cbf = cbf
+        _cached_cbf_signature = sig
     return cbf
 
 

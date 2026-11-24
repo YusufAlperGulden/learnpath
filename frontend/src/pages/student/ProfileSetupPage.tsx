@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { AppLayout } from '../../components/layout/AppLayout';
@@ -94,6 +95,7 @@ export function ProfileSetupPage() {
   );
 
   const { refreshUser } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -131,7 +133,11 @@ export function ProfileSetupPage() {
         preferred_language: preferredLanguage,
       });
       window.sessionStorage.removeItem('learnpath_pending_display_name');
-      await refreshUser();
+      await Promise.all([
+        refreshUser(),
+        queryClient.invalidateQueries({ queryKey: ['profile'] }),
+        queryClient.invalidateQueries({ queryKey: ['recommendations'] }),
+      ]);
       navigate(nextDestination);
     } catch {
       setStatusBanner('Could not save profile preferences. Please check your inputs and retry.');
