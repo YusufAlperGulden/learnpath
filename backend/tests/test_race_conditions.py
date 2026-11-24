@@ -51,3 +51,26 @@ def test_resource_open_and_bookmark_recover_from_duplicate_insert_race(
     assert saved.resource_id == resource.resource_id
     assert calls[0] == 2
     assert db_session.scalar(select(func.count()).select_from(SavedResource)) == 1
+
+
+def test_idempotent_seed_short_circuits_without_rehashing(
+    db_session: Session,  # noqa: F811
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    import scripts.seed_data as seed_data_mod
+    import scripts.seed_interactions as seed_inter_mod
+
+    first = seed_inter_mod.seed_interaction_cohort(db_session)
+    assert first.cohort_students == 48
+    assert first.total_feedback_rows >= 600
+
+    def _forbid_argon2(_pw: str) -> str:
+        raise AssertionError("hash_password must not run on an already-seeded database")
+
+    monkeypatch.setattr(seed_data_mod, "hash_password", _forbid_argon2)
+    monkeypatch.setattr(seed_inter_mod, "hash_password", _forbid_argon2)
+
+    second = seed_inter_mod.seed_interaction_cohort(db_session)
+    assert second.cohort_students == 48
+    assert second.total_feedback_rows == first.total_feedback_rows
+
