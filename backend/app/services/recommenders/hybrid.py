@@ -70,13 +70,24 @@ class HybridRecommender(BaseRecommender):
                 cbf_weight_used=1.0,
             )
 
-        cbf_scores = self.cbf.compute_cbf_scores(candidates, context)
+        raw_cbf = self.cbf.compute_cbf_scores(candidates, context)
+        cbf_vals = [pair[0] for pair in raw_cbf.values()]
+        min_cbf = min(cbf_vals)
+        max_cbf = max(cbf_vals)
+        span_cbf = max_cbf - min_cbf
+
         preferred_set = set(context.preferred_formats)
         cf_weight = 1.0 - self.cbf_weight
 
-        scored: list[tuple[tuple[float, int, str], RankedCandidate]] = []
+        scored: list[tuple[tuple[float, str], RankedCandidate]] = []
         for cand in candidates:
-            cbf_val, top_terms = cbf_scores[cand.resource_id]
+            raw_val, top_terms = raw_cbf[cand.resource_id]
+            # Map CBF onto a comparable [0.15..0.90] scale matching CF normalized ratings
+            cbf_val = (
+                0.15 + 0.75 * ((raw_val - min_cbf) / span_cbf)
+                if span_cbf > 1e-6
+                else raw_val
+            )
             cf_pred = cf_preds[cand.resource_id]
             format_fallback = cand.content_type not in preferred_set
 
@@ -96,8 +107,8 @@ class HybridRecommender(BaseRecommender):
                     f"predicted peer rating from {cf_pred.neighbor_count} similar learners."
                 )
             else:
-                # Item lacks neighbor ratings -> rely on CBF component truthfully without peer claim
-                blended = round(self.cbf_weight * cbf_val, 6)
+                # Item lacks neighbor ratings -> fall back to CBF score without 0-rating penalty
+                blended = round(cbf_val, 6) if self.cbf_weight > 0.0 else 0.0
                 rationale = self.cbf.build_cbf_rationale(
                     cand,
                     context,
@@ -111,7 +122,7 @@ class HybridRecommender(BaseRecommender):
                 rationale=rationale,
                 format_fallback_used=format_fallback,
             )
-            scored.append(((-blended, cand.topic_display_order, str(cand.resource_id)), item))
+            scored.append(((-blended, str(cand.resource_id)), item))
 
         scored.sort(key=lambda pair: pair[0])
         return HybridRankOutcome(
