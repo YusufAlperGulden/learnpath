@@ -1,7 +1,22 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, RotateCcw, Send } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  RotateCcw,
+  Send,
+} from 'lucide-react';
 import { extractApiErrorMessage } from '../../api/admin';
 import { studentApi } from '../../api/student';
 import { AppLayout } from '../../components/layout/AppLayout';
@@ -11,7 +26,6 @@ import {
   Card,
   CodeSnippetBlock,
   Modal,
-  ProgressBar,
   cn,
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
@@ -24,6 +38,7 @@ import type {
 interface StoredExamDraft {
   session: AssessmentQuestionsResponse;
   answersByQuestionId: Record<string, AnswerOption | null>;
+  currentIndex?: number;
 }
 
 function getDraftStorageKey(
@@ -39,6 +54,7 @@ export function PlacementTestPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const questionHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   const queryType = searchParams.get('type') === 'TOPIC_QUIZ' ? 'TOPIC_QUIZ' : 'DIAGNOSTIC';
   const queryTopicId = searchParams.get('topicId');
@@ -47,6 +63,7 @@ export function PlacementTestPage() {
   const [answersByQuestionId, setAnswersByQuestionId] = useState<
     Record<string, AnswerOption | null>
   >({});
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingReconnectSync, setPendingReconnectSync] = useState(false);
@@ -57,7 +74,7 @@ export function PlacementTestPage() {
     document.title =
       queryType === 'TOPIC_QUIZ'
         ? 'Topic Mastery Quiz | LearnPath'
-        : 'Diagnostic Placement Assessment | LearnPath';
+        : 'Python Placement Test | LearnPath';
   }, [queryType]);
 
   const { data: pathData } = useQuery({
@@ -68,6 +85,28 @@ export function PlacementTestPage() {
   const unlockedTopics = useMemo(
     () => (pathData?.nodes ?? []).filter((n) => !n.is_locked),
     [pathData],
+  );
+
+  const persistDraft = useCallback(
+    (
+      nextSession: AssessmentQuestionsResponse,
+      nextAnswers: Record<string, AnswerOption | null>,
+      nextIdx: number,
+    ) => {
+      if (!user) return;
+      const key = getDraftStorageKey(
+        user.user_id,
+        nextSession.test_type,
+        nextSession.target_topic_id,
+      );
+      const draft: StoredExamDraft = {
+        session: nextSession,
+        answersByQuestionId: nextAnswers,
+        currentIndex: nextIdx,
+      };
+      window.sessionStorage.setItem(key, JSON.stringify(draft));
+    },
+    [user],
   );
 
   const loadFreshSession = useCallback(
@@ -90,13 +129,8 @@ export function PlacementTestPage() {
         }
         setSession(fresh);
         setAnswersByQuestionId(initialAnswers);
-
-        const key = getDraftStorageKey(user.user_id, testType, topicId);
-        const draft: StoredExamDraft = {
-          session: fresh,
-          answersByQuestionId: initialAnswers,
-        };
-        window.sessionStorage.setItem(key, JSON.stringify(draft));
+        setCurrentIndex(0);
+        persistDraft(fresh, initialAnswers, 0);
       } catch (err: unknown) {
         setSession(null);
         setLoadError(
@@ -109,7 +143,7 @@ export function PlacementTestPage() {
         setIsLoadingQuestions(false);
       }
     },
-    [user],
+    [user, persistDraft],
   );
 
   // Restore sessionStorage draft on mount/param change, or fetch a fresh stateless token
@@ -132,8 +166,13 @@ export function PlacementTestPage() {
           Array.isArray(parsed.session.questions) &&
           parsed.session.questions.length > 0
         ) {
+          const clampedIdx = Math.min(
+            Math.max(parsed.currentIndex ?? 0, 0),
+            parsed.session.questions.length - 1,
+          );
           setSession(parsed.session);
           setAnswersByQuestionId(parsed.answersByQuestionId ?? {});
+          setCurrentIndex(clampedIdx);
           setLoadError(null);
           return;
         }
@@ -148,24 +187,33 @@ export function PlacementTestPage() {
   const updateAnswer = (questionId: string, option: AnswerOption | null) => {
     setAnswersByQuestionId((prev) => {
       const next = { ...prev, [questionId]: option };
-      if (user && session) {
-        const key = getDraftStorageKey(
-          user.user_id,
-          session.test_type,
-          session.target_topic_id,
-        );
-        const draft: StoredExamDraft = { session, answersByQuestionId: next };
-        window.sessionStorage.setItem(key, JSON.stringify(draft));
+      if (session) {
+        persistDraft(session, next, currentIndex);
       }
       return next;
     });
   };
 
+  const goToQuestion = (nextIdx: number) => {
+    if (!session) return;
+    const bounded = Math.min(Math.max(nextIdx, 0), session.questions.length - 1);
+    setCurrentIndex(bounded);
+    persistDraft(session, answersByQuestionId, bounded);
+    window.requestAnimationFrame(() => {
+      questionHeadingRef.current?.focus();
+    });
+  };
+
   const questions = session?.questions ?? [];
+  const activeQuestion = questions[currentIndex] ?? null;
+
   const answeredCount = useMemo(
     () => questions.filter((q) => answersByQuestionId[q.question_id] != null).length,
     [questions, answersByQuestionId],
   );
+
+  const progressPercent =
+    questions.length > 0 ? Math.round(((currentIndex + 1) / questions.length) * 100) : 0;
 
   const skippedQuestionNumbers = useMemo(
     () =>
@@ -259,200 +307,336 @@ export function PlacementTestPage() {
     }
   };
 
+  const headerPill =
+    session && questions.length > 0
+      ? `${queryType === 'TOPIC_QUIZ' ? 'Topic Mastery Quiz' : 'Python Placement Test'}  |  Question ${currentIndex + 1} of ${questions.length}`
+      : queryType === 'TOPIC_QUIZ'
+        ? 'Topic Mastery Quiz'
+        : 'Python Placement Test';
+
   return (
     <AppLayout
+      variant="focused"
+      hidePageHeader
+      contextPill={headerPill}
       pageTitle={
         queryType === 'TOPIC_QUIZ'
           ? 'Topic Mastery Verification Quiz'
-          : 'Python Diagnostic Placement Assessment'
+          : 'Python Diagnostic Placement Test'
       }
-      pageSubtitle="Answer what you know confidently — skipped questions are allowed and never guessed on your behalf (FR03)."
     >
-      <Card className="mb-6 flex flex-wrap items-end justify-between gap-4 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <Button
-            variant={queryType === 'DIAGNOSTIC' ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => switchMode('DIAGNOSTIC')}
-          >
-            Diagnostic Placement (All Topics)
-          </Button>
-          <Button
-            variant={queryType === 'TOPIC_QUIZ' ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => switchMode('TOPIC_QUIZ', queryTopicId ?? unlockedTopics[0]?.topic_id)}
-          >
-            Single-Topic Mastery Quiz
-          </Button>
+      <div className="mx-auto max-w-3xl space-y-5">
+        {/* Compact Mode Switcher Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#dce6df] bg-white px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={queryType === 'DIAGNOSTIC'}
+              onClick={() => switchMode('DIAGNOSTIC')}
+              className={cn(
+                'min-h-8 rounded-lg px-3 py-1 text-xs font-semibold transition-colors',
+                queryType === 'DIAGNOSTIC'
+                  ? 'bg-[#14532d] text-white'
+                  : 'text-slate-600 hover:bg-[#edf5f0]',
+              )}
+            >
+              Placement Test (All Topics)
+            </button>
+            <button
+              type="button"
+              aria-pressed={queryType === 'TOPIC_QUIZ'}
+              onClick={() => switchMode('TOPIC_QUIZ', queryTopicId ?? unlockedTopics[0]?.topic_id)}
+              className={cn(
+                'min-h-8 rounded-lg px-3 py-1 text-xs font-semibold transition-colors',
+                queryType === 'TOPIC_QUIZ'
+                  ? 'bg-[#14532d] text-white'
+                  : 'text-slate-600 hover:bg-[#edf5f0]',
+              )}
+            >
+              Topic Mastery Quiz
+            </button>
 
-          {queryType === 'TOPIC_QUIZ' ? (
-            <div className="flex flex-col gap-1">
-              <label htmlFor="quiz-topic-select" className="text-xs font-semibold text-slate-700">
-                Unlocked topic
-              </label>
-              <select
-                id="quiz-topic-select"
-                name="target_topic_id"
-                value={queryTopicId ?? ''}
-                onChange={(e) => switchMode('TOPIC_QUIZ', e.target.value)}
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
-              >
-                <option value="" disabled>
-                  Choose unlocked topic...
-                </option>
-                {unlockedTopics.map((t) => (
-                  <option key={t.topic_id} value={t.topic_id}>
-                    {t.display_order}. {t.name} ({t.mastery_status})
+            {queryType === 'TOPIC_QUIZ' ? (
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="quiz-topic-select" className="visually-hidden">
+                  Unlocked topic
+                </label>
+                <select
+                  id="quiz-topic-select"
+                  name="target_topic_id"
+                  value={queryTopicId ?? ''}
+                  onChange={(e) => switchMode('TOPIC_QUIZ', e.target.value)}
+                  className="min-h-8 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-900"
+                >
+                  <option value="" disabled>
+                    Choose unlocked topic...
                   </option>
-                ))}
-              </select>
-            </div>
+                  {unlockedTopics.map((t) => (
+                    <option key={t.topic_id} value={t.topic_id}>
+                      {t.display_order}. {t.name} ({t.mastery_status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+          </div>
+
+          {session ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (user) {
+                  window.sessionStorage.removeItem(
+                    getDraftStorageKey(
+                      user.user_id,
+                      session.test_type,
+                      session.target_topic_id,
+                    ),
+                  );
+                }
+                void loadFreshSession(session.test_type, session.target_topic_id);
+              }}
+            >
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              Reset session
+            </Button>
           ) : null}
         </div>
 
-        {session ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (user) {
-                window.sessionStorage.removeItem(
-                  getDraftStorageKey(
-                    user.user_id,
-                    session.test_type,
-                    session.target_topic_id,
-                  ),
-                );
-              }
-              void loadFreshSession(session.test_type, session.target_topic_id);
-            }}
-          >
-            <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-            Reset Draft Session
-          </Button>
-        ) : null}
-      </Card>
-
-      {loadError ? (
-        <Card role="alert" className="border-red-200 bg-red-50 text-sm text-red-800">
-          {loadError}
-        </Card>
-      ) : isLoadingQuestions ? (
-        <Card className="p-8 text-center text-sm text-slate-600">
-          Preparing signed assessment session...
-        </Card>
-      ) : !session ? (
-        <Card className="p-8 text-center text-sm text-slate-600">
-          Select an unlocked topic above to begin a Topic Mastery Quiz.
-        </Card>
-      ) : (
-        <form method="post" action="/api/v1/assessments/submit" onSubmit={handleExamSubmit}>
-          <Card className="sticky top-3 z-10 mb-6 border-blue-200 bg-white/95 p-4 backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="min-w-[240px] flex-1">
-                <ProgressBar
-                  label={`Answered ${answeredCount} of ${questions.length} questions (${skippedQuestionNumbers.length} unanswered)`}
-                  value={answeredCount}
-                  max={questions.length}
-                />
-              </div>
-              <Button type="submit" isLoading={submitMutation.isPending}>
-                <Send aria-hidden="true" className="h-4 w-4" />
-                Submit Assessment
-              </Button>
-            </div>
-            {submitError ? (
-              <p role="alert" className="mt-2 text-xs font-semibold text-red-600">
-                {submitError}
-              </p>
-            ) : null}
+        {loadError ? (
+          <Card role="alert" className="border-red-200 bg-red-50 text-sm text-red-800">
+            {loadError}
           </Card>
+        ) : isLoadingQuestions ? (
+          <Card className="p-10 text-center text-sm text-slate-600">
+            Preparing your signed Python placement session...
+          </Card>
+        ) : !session || !activeQuestion ? (
+          <Card className="p-10 text-center text-sm text-slate-600">
+            Select an unlocked topic above to begin a Topic Mastery Quiz.
+          </Card>
+        ) : (
+          <form method="post" action="/api/v1/assessments/submit" onSubmit={handleExamSubmit}>
+            {/* Top Placement Progress Bar + Step Pills (Figma Screen 4) */}
+            <div className="mb-5 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <label
+                  htmlFor="placement-step-progress"
+                  className="font-bold uppercase tracking-widest text-slate-500"
+                >
+                  Your Placement Progress
+                </label>
+                <span className="font-semibold text-[#14532d]">
+                  {progressPercent}% complete · {answeredCount}/{questions.length} answered
+                </span>
+              </div>
+              <progress
+                id="placement-step-progress"
+                value={currentIndex + 1}
+                max={questions.length}
+                className="h-2 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:bg-[#14532d] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#dce8e1] [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-[#14532d]"
+              >
+                {progressPercent}%
+              </progress>
 
-          <div className="space-y-5">
-            {questions.map((q, index) => {
-              const selected = answersByQuestionId[q.question_id] ?? null;
-              const options: [AnswerOption, string][] = [
-                ['A', q.option_a],
-                ['B', q.option_b],
-                ['C', q.option_c],
-                ['D', q.option_d],
-              ];
+              {/* Quick Question Navigator Pills */}
+              <nav aria-label="Questions" className="flex flex-wrap gap-1.5 pt-1">
+                {questions.map((q, idx) => {
+                  const isCurrent = idx === currentIndex;
+                  const isAnswered = answersByQuestionId[q.question_id] != null;
+                  return (
+                    <button
+                      key={q.question_id}
+                      type="button"
+                      aria-current={isCurrent ? 'step' : undefined}
+                      aria-label={`Question ${idx + 1}${isAnswered ? ' (answered)' : ' (unanswered)'}`}
+                      onClick={() => goToQuestion(idx)}
+                      className={cn(
+                        'flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[11px] font-bold transition-colors',
+                        isCurrent
+                          ? 'border-[#14532d] bg-[#14532d] text-white'
+                          : isAnswered
+                            ? 'border-[#9dc4ac] bg-[#e6f2eb] text-[#14532d]'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-[#14532d]/40',
+                      )}
+                    >
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
 
-              return (
-                <Card key={q.question_id} className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Badge tone="neutral">Question {index + 1}</Badge>
-                      <Badge tone="info">{q.topic_name}</Badge>
-                    </div>
-                    {selected ? (
-                      <button
-                        type="button"
-                        onClick={() => updateAnswer(q.question_id, null)}
-                        className="text-xs font-medium text-slate-500 hover:text-slate-800 hover:underline"
-                      >
-                        Clear choice (leave unanswered)
-                      </button>
-                    ) : (
-                      <Badge tone="warning">Unanswered</Badge>
-                    )}
-                  </div>
+            {submitError ? (
+              <div
+                role="alert"
+                className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700"
+              >
+                {submitError}
+              </div>
+            ) : null}
 
-                  {q.code_snippet ? <CodeSnippetBlock code={q.code_snippet} /> : null}
+            {/* Single-Question Centered Card (Figma Screen 4) */}
+            <Card className="rounded-2xl border-[#dce6df] p-6 shadow-xs sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge tone="info">Topic: {activeQuestion.topic_name}</Badge>
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Question {String(currentIndex + 1).padStart(2, '0')}
+                </span>
+              </div>
 
-                  <fieldset className="border-0 p-0">
-                    <legend className="text-base font-semibold text-slate-900">
-                      {q.question_text}
-                    </legend>
-                    <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-                      {options.map(([letter, text]) => {
-                        const inputId = `q-${q.question_id}-${letter}`;
-                        const isChecked = selected === letter;
-                        return (
-                          <div key={letter} className="relative">
-                            <input
-                              type="radio"
-                              id={inputId}
-                              name={`question_${q.question_id}`}
-                              value={letter}
-                              checked={isChecked}
-                              onChange={() => updateAnswer(q.question_id, letter)}
-                              className="visually-hidden peer"
-                            />
-                            <label
-                              htmlFor={inputId}
+              <h2
+                ref={questionHeadingRef}
+                tabIndex={-1}
+                className="mt-4 text-lg font-bold leading-snug text-slate-900 outline-none sm:text-xl"
+              >
+                {activeQuestion.question_text}
+              </h2>
+
+              {activeQuestion.code_snippet ? (
+                <CodeSnippetBlock code={activeQuestion.code_snippet} className="mt-4" />
+              ) : null}
+
+              <fieldset className="mt-6 border-0 p-0">
+                <div className="flex items-center justify-between">
+                  <legend className="text-xs font-semibold text-slate-600">
+                    Select one answer (or leave blank to skip honestly)
+                  </legend>
+                  {answersByQuestionId[activeQuestion.question_id] ? (
+                    <button
+                      type="button"
+                      onClick={() => updateAnswer(activeQuestion.question_id, null)}
+                      className="text-xs font-semibold text-slate-500 hover:text-[#14532d] hover:underline"
+                    >
+                      Clear choice
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {(
+                    [
+                      ['A', activeQuestion.option_a],
+                      ['B', activeQuestion.option_b],
+                      ['C', activeQuestion.option_c],
+                      ['D', activeQuestion.option_d],
+                    ] as [AnswerOption, string][]
+                  ).map(([letter, text]) => {
+                    const selected = answersByQuestionId[activeQuestion.question_id] ?? null;
+                    const inputId = `q-${activeQuestion.question_id}-${letter}`;
+                    const isChecked = selected === letter;
+
+                    return (
+                      <div key={letter} className="relative">
+                        <input
+                          type="radio"
+                          id={inputId}
+                          name={`question_${activeQuestion.question_id}`}
+                          value={letter}
+                          checked={isChecked}
+                          onChange={() => updateAnswer(activeQuestion.question_id, letter)}
+                          className="visually-hidden peer"
+                        />
+                        <label
+                          htmlFor={inputId}
+                          className={cn(
+                            'flex min-h-14 cursor-pointer items-center justify-between gap-3 rounded-xl border p-3.5 text-sm transition-colors',
+                            'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#14532d]',
+                            isChecked
+                              ? 'border-[#14532d] bg-[#edf6f0] font-semibold text-slate-900 shadow-2xs'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-[#14532d]/40 hover:bg-[#f8fbf9]',
+                          )}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span
+                              aria-hidden="true"
                               className={cn(
-                                'flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border p-3.5 text-sm transition-colors',
-                                'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600',
+                                'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold',
                                 isChecked
-                                  ? 'border-blue-600 bg-blue-50/80 font-semibold text-slate-900'
-                                  : 'border-slate-300 bg-white text-slate-800 hover:border-slate-400',
+                                  ? 'border-[#14532d] bg-[#14532d] text-white'
+                                  : 'border-slate-300 bg-slate-50 text-slate-700',
                               )}
                             >
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold',
-                                  isChecked
-                                    ? 'border-blue-600 bg-blue-600 text-white'
-                                    : 'border-slate-300 bg-slate-50 text-slate-700',
-                                )}
-                              >
-                                {letter}
-                              </span>
-                              <span className="pt-0.5">{text}</span>
-                            </label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-                </Card>
-              );
-            })}
-          </div>
-        </form>
-      )}
+                              {letter}
+                            </span>
+                            <span>{text}</span>
+                          </span>
+
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+                              isChecked
+                                ? 'border-[#14532d] bg-[#14532d] text-white'
+                                : 'border-slate-300 bg-white',
+                            )}
+                          >
+                            {isChecked ? <Check className="h-3 w-3" /> : null}
+                          </span>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              {/* Step Footer Navigation */}
+              <div className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  disabled={currentIndex === 0}
+                  onClick={() => goToQuestion(currentIndex - 1)}
+                >
+                  <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+                  <span>Previous</span>
+                </Button>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {currentIndex < questions.length - 1 ? (
+                    <>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        size="md"
+                        isLoading={submitMutation.isPending}
+                      >
+                        Submit test
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="md"
+                        onClick={() => goToQuestion(currentIndex + 1)}
+                      >
+                        <span>Next Question</span>
+                        <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="md"
+                      isLoading={submitMutation.isPending}
+                    >
+                      <Send aria-hidden="true" className="h-4 w-4" />
+                      <span>Submit Assessment</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs font-medium text-[#14532d]">
+              <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Your progress is saved automatically.</span>
+            </p>
+          </form>
+        )}
+      </div>
 
       <Modal
         open={isSkipConfirmOpen}
@@ -478,10 +662,15 @@ export function PlacementTestPage() {
             <Button
               variant="outline"
               autoFocus
-              onClick={() => setIsSkipConfirmOpen(false)}
+              onClick={() => {
+                setIsSkipConfirmOpen(false);
+                if (skippedQuestionNumbers.length > 0) {
+                  goToQuestion(skippedQuestionNumbers[0] - 1);
+                }
+              }}
               disabled={submitMutation.isPending}
             >
-              Review Questions
+              Jump to First Unanswered
             </Button>
             <Button
               variant="primary"

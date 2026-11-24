@@ -24,7 +24,7 @@ export function ProgressBar({ label, value, max = 100, className }: ProgressBarP
         id={id}
         value={clamped}
         max={safeMax}
-        className="h-2.5 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:bg-blue-600 [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-slate-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-blue-600"
+        className="h-2.5 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:bg-[#14532d] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#dce8e1] [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-[#14532d]"
       >
         {percent}%
       </progress>

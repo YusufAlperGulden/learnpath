@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GitBranch, Lock, Pencil, Plus, Power, RotateCcw } from 'lucide-react';
 import { adminApi, extractApiErrorMessage } from '../../api/admin';
@@ -55,9 +55,15 @@ const CORRECT_OPTION_CARDS: RadioCardOption<AnswerOption>[] = [
 
 export interface AdminQuestionsSectionProps {
   topics: TopicAdminRead[];
+  autoOpenCreate?: boolean;
+  onAutoOpenConsumed?: () => void;
 }
 
-export function AdminQuestionsSection({ topics }: AdminQuestionsSectionProps) {
+export function AdminQuestionsSection({
+  topics,
+  autoOpenCreate = false,
+  onAutoOpenConsumed,
+}: AdminQuestionsSectionProps) {
   const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,6 +160,14 @@ export function AdminQuestionsSection({ topics }: AdminQuestionsSectionProps) {
     });
     setIsEditorOpen(true);
   };
+
+  useEffect(() => {
+    if (autoOpenCreate && topics.length > 0) {
+      openCreateModal();
+      onAutoOpenConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenCreate, topics.length]);
 
   const openEditModal = (q: QuestionAdminRead) => {
     setEditingQuestion(q);
@@ -403,8 +417,8 @@ export function AdminQuestionsSection({ topics }: AdminQuestionsSectionProps) {
                 })}
               </div>
 
-              <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 px-3.5 py-2.5 text-xs text-slate-700">
-                <span className="font-semibold text-blue-900">Solution &amp; Explanation: </span>
+              <div className="mt-3 rounded-lg border border-[#b9d8c5] bg-[#edf6f0] px-3.5 py-2.5 text-xs text-slate-800">
+                <span className="font-semibold text-[#14532d]">Solution &amp; Explanation: </span>
                 {q.explanation}
               </div>
             </Card>
