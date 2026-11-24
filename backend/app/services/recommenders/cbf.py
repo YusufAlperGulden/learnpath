@@ -32,6 +32,7 @@ _GOAL_QUERY_EXPANSION: dict[str, str] = {
     "DATA_SCIENCE": "data science numeric precision cleaning tabular aggregation pipelines",
     "WEB_DEVELOPMENT": "web backend api payload routing unicode modular clean architecture",
     "AUTOMATION": "automation scripting stream logs workflow state files iterators",
+    "ALGORITHMS_PREP": "algorithms complexity recursion iteration data structures problem solving",
     "PYTHON_FUNDAMENTALS": "beginner python fundamentals visual step by step core basics practice",
 }
 

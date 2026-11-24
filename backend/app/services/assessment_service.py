@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import AnswerOption, DifficultyLevel, MasteryStatus, TestType
@@ -504,6 +505,17 @@ def submit_assessment_atomic(
                 prog.updated_at = now
 
         db.commit()
+    except IntegrityError:
+        db.rollback()
+        raced = db.get(TestAttempt, payload.attempt_id)
+        if raced is not None and raced.student_id == student_id:
+            return get_student_attempt_detail(
+                db,
+                student_id=student_id,
+                attempt_id=payload.attempt_id,
+                ordered_question_ids=expected_q_ids,
+            )
+        raise
     except Exception:
         db.rollback()
         raise

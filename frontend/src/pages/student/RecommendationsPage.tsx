@@ -67,6 +67,7 @@ export function RecommendationsPage() {
   const selectedStrategy = parseStrategyParam(searchParams.get('strategy'));
   const includeCompleted = searchParams.get('revision') === '1';
   const requestedAttemptId = searchParams.get('attemptId');
+  const keywordQuery = (searchParams.get('q') || '').trim();
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
 
   useEffect(() => {
@@ -106,12 +107,14 @@ export function RecommendationsPage() {
     nextTopicId: string,
     nextStrategy: RecommenderStrategy,
     nextRevision: boolean = includeCompleted,
+    nextQuery: string = keywordQuery,
   ) => {
     const next: Record<string, string> = {};
     if (nextTopicId) next.topicId = nextTopicId;
     if (nextStrategy !== 'hybrid') next.strategy = nextStrategy;
     if (nextRevision) next.revision = '1';
     if (requestedAttemptId) next.attemptId = requestedAttemptId;
+    if (nextQuery) next.q = nextQuery;
     setSearchParams(next);
   };
 
@@ -187,6 +190,19 @@ export function RecommendationsPage() {
       status: n.mastery_status as MasteryStatus,
     }));
   }, [attemptDetail, nodes]);
+
+  const visibleItems = useMemo(() => {
+    const items = data?.items ?? [];
+    if (!keywordQuery) return items;
+    const needle = keywordQuery.toLowerCase();
+    const matched = items.filter(
+      (it) =>
+        it.title.toLowerCase().includes(needle) ||
+        it.description.toLowerCase().includes(needle) ||
+        it.topic_name.toLowerCase().includes(needle),
+    );
+    return matched.length > 0 ? matched : items;
+  }, [data?.items, keywordQuery]);
 
   return (
     <AppLayout
@@ -418,6 +434,15 @@ export function RecommendationsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {keywordQuery ? (
+            <button
+              type="button"
+              onClick={() => updateFilterParams(selectedTopicId, selectedStrategy, includeCompleted, '')}
+              className="inline-flex items-center gap-1 rounded-full border border-[#9dc4ac] bg-[#e6f2eb] px-2.5 py-0.5 text-xs font-semibold text-[#14532d]"
+            >
+              <span>Search: &ldquo;{keywordQuery}&rdquo; &times;</span>
+            </button>
+          ) : null}
           <Badge tone="info">Served: {data?.strategy_used ?? selectedStrategy}</Badge>
           <Link
             to="/bookmarks"
@@ -498,7 +523,7 @@ export function RecommendationsPage() {
           </Card>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {data.items.map((item) => {
+            {visibleItems.map((item) => {
               const bookmarked = Boolean(item.is_bookmarked);
               return (
                 <Card
