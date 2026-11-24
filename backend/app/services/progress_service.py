@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import (
@@ -27,6 +28,22 @@ from app.schemas.progress import (
 )
 
 logger = get_logger("progress")
+
+
+def _commit_or_retry_on_race(db: Session, retry: bool) -> bool:
+    """Commits; on a concurrent duplicate-insert IntegrityError rolls back and signals a retry.
+
+    Returns True when the caller should re-run its read-then-update path once (the competing
+    request has already inserted the row). Re-raises if a retry was already attempted.
+    """
+    try:
+        db.commit()
+        return False
+    except IntegrityError:
+        db.rollback()
+        if retry:
+            raise
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +80,7 @@ def toggle_manual_topic_completion(
     student_id: UUID,
     topic_id: UUID,
     is_manually_completed: bool,
+    _retry: bool = False,
 ) -> TopicProgressRead:
     """Updates self-reported study completion WITHOUT modifying exam mastery_status (FR08)."""
     topic = db.get(Topic, topic_id)
@@ -87,7 +105,14 @@ def toggle_manual_topic_completion(
         prog.manually_completed_at = now if is_manually_completed else None
         prog.updated_at = now
 
-    db.commit()
+    if _commit_or_retry_on_race(db, _retry):
+        return toggle_manual_topic_completion(
+            db,
+            student_id=student_id,
+            topic_id=topic_id,
+            is_manually_completed=is_manually_completed,
+            _retry=True,
+        )
     db.refresh(prog)
     logger.info(
         "Updated manual topic completion student_id=%s topic_id=%s completed=%s mastery=%s",
@@ -193,6 +218,7 @@ def record_resource_open(
     *,
     student_id: UUID,
     resource_id: UUID,
+    _retry: bool = False,
 ) -> ResourceProgressRead:
     """Marks a resource OPENED on first click or refreshes last_accessed_at without demoting COMPLETED."""
     if db.get(Resource, resource_id) is None:
@@ -213,7 +239,10 @@ def record_resource_open(
     else:
         prog.last_accessed_at = now
 
-    db.commit()
+    if _commit_or_retry_on_race(db, _retry):
+        return record_resource_open(
+            db, student_id=student_id, resource_id=resource_id, _retry=True
+        )
     db.refresh(prog)
     return ResourceProgressRead.model_validate(prog)
 
@@ -224,6 +253,7 @@ def set_resource_progress_status(
     student_id: UUID,
     resource_id: UUID,
     target_status: ResourceProgressStatus,
+    _retry: bool = False,
 ) -> ResourceProgressRead:
     """Explicitly transitions a resource between OPENED and COMPLETED (FR08)."""
     if db.get(Resource, resource_id) is None:
@@ -249,7 +279,14 @@ def set_resource_progress_status(
         else:
             prog.completed_at = None
 
-    db.commit()
+    if _commit_or_retry_on_race(db, _retry):
+        return set_resource_progress_status(
+            db,
+            student_id=student_id,
+            resource_id=resource_id,
+            target_status=target_status,
+            _retry=True,
+        )
     db.refresh(prog)
     logger.info(
         "Updated resource progress student_id=%s resource_id=%s status=%s",
@@ -334,6 +371,7 @@ def save_student_bookmark(
     *,
     student_id: UUID,
     resource_id: UUID,
+    _retry: bool = False,
 ) -> BookmarkDetailRead:
     """Idempotently bookmarks `(student_id, resource_id)` without duplicate-PK errors."""
     res = db.scalar(
@@ -352,7 +390,10 @@ def save_student_bookmark(
             saved_at=datetime.now(UTC),
         )
         db.add(saved)
-        db.commit()
+        if _commit_or_retry_on_race(db, _retry):
+            return save_student_bookmark(
+                db, student_id=student_id, resource_id=resource_id, _retry=True
+            )
         db.refresh(saved)
         logger.info("Saved bookmark student_id=%s resource_id=%s", student_id, resource_id)
 
@@ -403,6 +444,7 @@ def upsert_student_feedback(
     *,
     student_id: UUID,
     payload: FeedbackUpsertRequest,
+    _retry: bool = False,
 ) -> FeedbackRead:
     """Creates or updates `(student_id, resource_id)` 1–5 rating and optional comment (FR09)."""
     if db.get(Resource, payload.resource_id) is None:
@@ -433,7 +475,10 @@ def upsert_student_feedback(
         existing.comment = clean_comment
         existing.created_at = now
 
-    db.commit()
+    if _commit_or_retry_on_race(db, _retry):
+        return upsert_student_feedback(
+            db, student_id=student_id, payload=payload, _retry=True
+        )
     db.refresh(existing)
     logger.info(
         "Upserted resource feedback student_id=%s resource_id=%s rating=%d",

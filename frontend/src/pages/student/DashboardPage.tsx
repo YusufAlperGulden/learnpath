@@ -151,12 +151,11 @@ export function DashboardPage() {
 
   const activityBars = useMemo(() => {
     if (nodes.length > 0) {
+      // Only show real exam scores; never-assessed topics render as 0 (no invented values)
       return nodes.map((n) => ({
         label: `T${n.display_order}`,
-        topic: n.name,
-        score: Math.round(
-          n.latest_score_percent ?? (n.mastery_status === 'MASTERED' ? 100 : 12),
-        ),
+        topic: n.latest_score_percent === null ? `${n.name} (not assessed yet)` : n.name,
+        score: n.latest_score_percent === null ? 0 : Math.round(n.latest_score_percent),
       }));
     }
     return [{ label: 'Start', topic: 'Placement', score: 0 }];
