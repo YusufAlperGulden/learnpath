@@ -354,10 +354,10 @@ def test_expanded_curriculum_seed_is_complete_and_idempotent(
     first_run = seed_database(db_session)
     assert first_run.topics_total == 6
     assert first_run.resources_total == 54
-    assert first_run.questions_total == 36
+    assert first_run.questions_total == 42
 
     # Running a second time must be 100% idempotent with zero duplicate rows
     second_run = seed_database(db_session)
     assert second_run.topics_total == 6
     assert second_run.resources_total == 54
-    assert second_run.questions_total == 36
+    assert second_run.questions_total == 42

@@ -71,7 +71,7 @@ pip install -r requirements.txt
 # Apply the 13-table PostgreSQL schema
 alembic upgrade head
 
-# Seed 6 Python DAG topics, 54 curated resources (en & tr), 36 code questions, and demo users
+# Seed 6 Python DAG topics, 54 curated resources (en & tr), 42 code questions, and demo users
 python -m scripts.seed_data
 
 # (Optional) Seed the 48-student interaction cohort (~622 chronological 1–5 ratings) for CF/Hybrid
