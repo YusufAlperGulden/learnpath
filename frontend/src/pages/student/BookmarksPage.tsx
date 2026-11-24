@@ -187,7 +187,7 @@ export function BookmarksPage() {
                       rel="noopener noreferrer"
                       aria-label={`Open saved resource ${item.title}`}
                       onClick={() => openMutation.mutate(item.resource_id)}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#14532d] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0f3f22]"
                     >
                       Open Resource
                       <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
@@ -250,7 +250,7 @@ export function BookmarksPage() {
                         })
                       }
                     >
-                      <Bookmark aria-hidden="true" className="h-3.5 w-3.5 fill-blue-600 text-blue-600" />
+                      <Bookmark aria-hidden="true" className="h-3.5 w-3.5 fill-[#14532d] text-[#14532d]" />
                       Saved
                     </Button>
                   </div>
@@ -301,7 +301,7 @@ export function BookmarksPage() {
                       rel="noopener noreferrer"
                       aria-label={`Open study resource ${item.title}`}
                       onClick={() => openMutation.mutate(item.resource_id)}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#14532d] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0f3f22]"
                     >
                       Open Again
                       <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />

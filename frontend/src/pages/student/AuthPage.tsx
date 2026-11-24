@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, GraduationCap } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { apiClient, extractApiErrorMessage } from '../../api/client';
-import { Button, Card } from '../../components/ui';
+import { BrandLogo } from '../../components/layout/AppLayout';
+import { Button, Card, cn } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import type { TokenResponse } from '../../types/api';
 
@@ -71,33 +72,74 @@ export function AuthPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-center bg-slate-50 px-4 py-12">
-      <main className="mx-auto w-full max-w-md">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <GraduationCap aria-hidden="true" className="h-10 w-10 text-blue-600" />
-          <h1 className="mt-3 text-2xl font-bold text-slate-900">
-            {mode === 'login' ? 'Sign in to LearnPath' : 'Create your LearnPath account'}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Personalized Python curriculum &amp; explainable resource recommendations
-          </p>
+    <div className="flex min-h-screen flex-col bg-[#e6efea] text-slate-900">
+      {/* Top White Brand Header (Figma Screen 1) */}
+      <header className="border-b border-[#d6e3dc] bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
+          <BrandLogo to="/auth" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={mode === 'login'}
+              onClick={() => {
+                setMode('login');
+                setErrorMessage(null);
+              }}
+              className={cn(
+                'min-h-9 rounded-full px-4 py-1.5 text-xs font-semibold transition-colors',
+                mode === 'login'
+                  ? 'bg-[#14532d] text-white shadow-xs'
+                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-[#f3f8f5]',
+              )}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === 'register'}
+              onClick={() => {
+                setMode('register');
+                setErrorMessage(null);
+              }}
+              className={cn(
+                'min-h-9 rounded-full px-4 py-1.5 text-xs font-semibold transition-colors',
+                mode === 'register'
+                  ? 'bg-[#14532d] text-white shadow-xs'
+                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-[#f3f8f5]',
+              )}
+            >
+              Register
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Sage-Mint Centered Canvas */}
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-12">
+        <div className="mb-7 text-center">
+          <h1 className="text-4xl font-extrabold tracking-tight text-[#14532d]">Learn Path</h1>
+          <p className="mt-1.5 text-base font-medium text-slate-700">Your Learning Guide.</p>
         </div>
 
-        <Card>
-          <form method="post" action="/api/v1/auth" onSubmit={handleSubmit} className="space-y-5">
+        <Card className="mx-auto w-full max-w-[380px] rounded-2xl border-[#d3e2da] p-6 shadow-md">
+          <h2 className="mb-4 text-sm font-bold text-slate-900">
+            {mode === 'login' ? 'Sign in to your account' : 'Create your account'}
+          </h2>
+
+          <form method="post" action="/api/v1/auth" onSubmit={handleSubmit} className="space-y-4">
             {errorMessage ? (
               <div
                 role="alert"
-                className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+                className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-800"
               >
                 {errorMessage}
               </div>
             ) : null}
 
             {mode === 'register' ? (
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="full-name" className="text-sm font-medium text-slate-900">
-                  Full name
+              <div className="flex flex-col gap-1">
+                <label htmlFor="full-name" className="text-xs font-semibold text-slate-800">
+                  Full Name
                 </label>
                 <input
                   id="full-name"
@@ -107,16 +149,17 @@ export function AuthPage() {
                   autoComplete="name"
                   enterKeyHint="next"
                   aria-invalid="false"
+                  placeholder="Ada Lovelace"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="min-h-12 rounded-lg border border-slate-400 px-3.5 py-2.5 text-base text-slate-900"
+                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400"
                 />
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="text-sm font-medium text-slate-900">
-                Email address <span aria-hidden="true">*</span>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="email" className="text-xs font-semibold text-slate-800">
+                Email <span aria-hidden="true">*</span>
               </label>
               <input
                 id="email"
@@ -129,18 +172,19 @@ export function AuthPage() {
                 spellCheck={false}
                 enterKeyHint="next"
                 aria-invalid={errorMessage ? 'true' : 'false'}
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
                   if (errorMessage) setErrorMessage(null);
                 }}
-                className="min-h-12 rounded-lg border border-slate-400 px-3.5 py-2.5 text-base text-slate-900"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400"
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-medium text-slate-900">
+                <label htmlFor="password" className="text-xs font-semibold text-slate-800">
                   Password <span aria-hidden="true">*</span>
                 </label>
                 <button
@@ -148,7 +192,7 @@ export function AuthPage() {
                   aria-pressed={showPassword}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword((prev) => !prev)}
-                  className="inline-flex min-h-8 items-center gap-1 rounded px-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  className="inline-flex min-h-7 items-center gap-1 rounded px-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
                 >
                   {showPassword ? (
                     <>
@@ -163,9 +207,6 @@ export function AuthPage() {
                   )}
                 </button>
               </div>
-              <span id="password-hint" className="text-xs text-slate-600">
-                At least 8 characters.
-              </span>
               <input
                 id="password"
                 name="password"
@@ -181,16 +222,19 @@ export function AuthPage() {
                   setPassword(e.target.value);
                   if (errorMessage) setErrorMessage(null);
                 }}
-                className="min-h-12 rounded-lg border border-slate-400 px-3.5 py-2.5 text-base text-slate-900"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900"
               />
+              <span id="password-hint" className="text-[11px] text-slate-500">
+                At least 8 characters.
+              </span>
             </div>
 
-            <Button type="submit" size="lg" isLoading={isSubmitting} className="w-full">
-              {mode === 'login' ? 'Sign in' : 'Create account'}
+            <Button type="submit" size="md" isLoading={isSubmitting} className="mt-2 w-full">
+              {mode === 'login' ? 'Sign In' : 'Create Account'}
             </Button>
           </form>
 
-          <div className="mt-6 border-t border-slate-100 pt-4 text-center text-sm text-slate-600">
+          <div className="mt-4 border-t border-slate-100 pt-3.5 text-center text-xs text-slate-600">
             {mode === 'login' ? "Don't have an account yet? " : 'Already registered? '}
             <button
               type="button"
@@ -198,7 +242,7 @@ export function AuthPage() {
                 setMode((prev) => (prev === 'login' ? 'register' : 'login'));
                 setErrorMessage(null);
               }}
-              className="font-semibold text-blue-600 hover:underline"
+              className="font-semibold text-[#14532d] hover:underline"
             >
               {mode === 'login' ? 'Create account' : 'Sign in'}
             </button>

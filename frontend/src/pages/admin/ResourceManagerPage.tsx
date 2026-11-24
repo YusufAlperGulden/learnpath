@@ -1,9 +1,25 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Pencil, Plus, Power, RotateCcw } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  Code2,
+  ExternalLink,
+  FileText,
+  GitBranch,
+  Layers,
+  Pencil,
+  PlayCircle,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { adminApi, extractApiErrorMessage } from '../../api/admin';
 import { AppLayout } from '../../components/layout/AppLayout';
-import { Badge, Button, Card, Modal, ResponsiveTable } from '../../components/ui';
+import { Badge, Button, Card, Modal, ResponsiveTable, cn } from '../../components/ui';
 import type {
   ContentType,
   DifficultyLevel,
@@ -35,6 +51,14 @@ const EMPTY_FORM: ResourceFormState = {
   estimated_minutes: '20',
 };
 
+const PAGE_SIZE = 8;
+
+function FormatIcon({ type }: { type: ContentType }) {
+  if (type === 'VIDEO') return <PlayCircle aria-hidden="true" className="h-4 w-4" />;
+  if (type === 'EXERCISE') return <Code2 aria-hidden="true" className="h-4 w-4" />;
+  return <FileText aria-hidden="true" className="h-4 w-4" />;
+}
+
 export function ResourceManagerPage() {
   const queryClient = useQueryClient();
 
@@ -44,6 +68,7 @@ export function ResourceManagerPage() {
   const [difficultyFilter, setDifficultyFilter] = useState<DifficultyLevel | ''>('');
   const [languageFilter, setLanguageFilter] = useState<SupportedLanguage | ''>('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<ResourceAdminRead | null>(null);
@@ -53,7 +78,7 @@ export function ResourceManagerPage() {
   const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = 'Admin Resource Catalog | LearnPath';
+    document.title = 'Learning Resource Management | LearnPath Admin';
   }, []);
 
   const { data: topics = [] } = useQuery({
@@ -74,6 +99,10 @@ export function ResourceManagerPage() {
     [topicFilter, formatFilter, difficultyFilter, languageFilter, statusFilter, searchQuery],
   );
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [apiFilters]);
+
   const { data: resources = [], isLoading } = useQuery({
     queryKey: ['admin', 'resources', apiFilters],
     queryFn: () => adminApi.listResources(apiFilters),
@@ -83,6 +112,18 @@ export function ResourceManagerPage() {
     () => resources.filter((r) => r.is_active).length,
     [resources],
   );
+
+  const formatVarietyCount = useMemo(() => {
+    const distinct = new Set(resources.map((r) => r.content_type));
+    return distinct.size || 3;
+  }, [resources]);
+
+  const totalPages = Math.max(Math.ceil(resources.length / PAGE_SIZE), 1);
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedResources = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return resources.slice(start, start + PAGE_SIZE);
+  }, [resources, safePage]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -153,9 +194,10 @@ export function ResourceManagerPage() {
   const openCreateModal = () => {
     setEditingResource(null);
     setFormError(null);
+    setDuplicateResourceId(null);
     setFormState({
       ...EMPTY_FORM,
-      topic_id: topics[0]?.topic_id ?? '',
+      topic_id: topicFilter || topics[0]?.topic_id || '',
     });
     setIsModalOpen(true);
   };
@@ -163,6 +205,7 @@ export function ResourceManagerPage() {
   const openEditModal = (res: ResourceAdminRead) => {
     setEditingResource(res);
     setFormError(null);
+    setDuplicateResourceId(null);
     setFormState({
       topic_id: res.topic_id,
       title: res.title,
@@ -190,265 +233,370 @@ export function ResourceManagerPage() {
     saveMutation.mutate();
   };
 
+  const startIdx = resources.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endIdx = Math.min(safePage * PAGE_SIZE, resources.length);
+
   return (
     <AppLayout
-      pageTitle="Admin Resource Catalog"
-      pageSubtitle="Manage TF-IDF indexed learning resources with duplicate-URL detection and FK-safe soft deactivation (FR10)."
-    >
-      <div className="mb-6 grid gap-4 sm:grid-cols-4">
-        <Card className="p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Matching Resources
-          </p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{resources.length}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Active in Recommender
-          </p>
-          <p className="mt-1 text-2xl font-bold text-emerald-700">{activeCount}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Soft-Deactivated
-          </p>
-          <p className="mt-1 text-2xl font-bold text-amber-700">
-            {resources.length - activeCount}
-          </p>
-        </Card>
-        <Card className="flex items-center justify-between p-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Curriculum Topics
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{topics.length}</p>
-          </div>
+      variant="sidebar"
+      eyebrow="Content Library"
+      pageTitle="Learning Resource Management"
+      pageSubtitle="Manage TF-IDF indexed Python resources with duplicate-URL detection and FK-safe soft deactivation."
+      headerActions={
+        <>
           <Button onClick={openCreateModal} disabled={topics.length === 0}>
             <Plus aria-hidden="true" className="h-4 w-4" />
-            Add Resource
+            <span>Add New Resource</span>
           </Button>
+          <Link
+            to="/admin/topics-questions?tab=questions&new=1"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#14532d] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#0f3f22]"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            <span>Add Test Question</span>
+          </Link>
+        </>
+      }
+    >
+      {/* 3 KPI Summary Cards (Figma Screen 7) */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <Card className="flex items-center gap-3.5 rounded-2xl border-[#dce6df] p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e6f2eb] text-[#14532d]">
+            <BookOpen aria-hidden="true" className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-2xl font-extrabold text-slate-900">{activeCount}</p>
+            <p className="text-xs font-medium text-slate-500">
+              Published resources ({resources.length - activeCount} inactive)
+            </p>
+          </div>
+        </Card>
+
+        <Card className="flex items-center gap-3.5 rounded-2xl border-[#dce6df] p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e6f2eb] text-[#14532d]">
+            <GitBranch aria-hidden="true" className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-2xl font-extrabold text-slate-900">{topics.length}</p>
+            <p className="text-xs font-medium text-slate-500">Python curriculum topics</p>
+          </div>
+        </Card>
+
+        <Card className="flex items-center gap-3.5 rounded-2xl border-[#dce6df] p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e6f2eb] text-[#14532d]">
+            <Layers aria-hidden="true" className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-2xl font-extrabold text-slate-900">{formatVarietyCount}</p>
+            <p className="text-xs font-medium text-slate-500">
+              Resource formats (Video · Article · Exercise)
+            </p>
+          </div>
         </Card>
       </div>
 
-      <Card className="mb-6 p-4">
-        <search>
-          <form
-            method="get"
-            action="/admin/resources"
-            onSubmit={(e) => e.preventDefault()}
-            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
+      {/* Unified Resource Library Card (Figma Screen 7) */}
+      <Card className="overflow-hidden rounded-2xl border-[#dce6df] p-0">
+        {/* Search & Secondary Filters Header */}
+        <div className="border-b border-[#e5ede8] p-5">
+          <search>
+            <form
+              method="get"
+              action="/admin/resources"
+              onSubmit={(e) => e.preventDefault()}
+              className="flex flex-wrap items-center justify-between gap-3"
+            >
+              <h2 className="text-base font-bold text-slate-900">Resource library</h2>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="relative">
+                  <label htmlFor="res-search" className="visually-hidden">
+                    Search title, TF-IDF description, or URL
+                  </label>
+                  <Search
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    id="res-search"
+                    name="search"
+                    type="search"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search resources..."
+                    className="h-9 w-56 rounded-lg border border-slate-300 bg-[#f8faf9] pl-8 pr-3 text-xs text-slate-900 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="res-format-filter" className="visually-hidden">
+                    Format
+                  </label>
+                  <select
+                    id="res-format-filter"
+                    name="content_type"
+                    value={formatFilter}
+                    onChange={(e) => setFormatFilter(e.target.value as ContentType | '')}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800"
+                  >
+                    <option value="">All formats</option>
+                    <option value="VIDEO">Video</option>
+                    <option value="ARTICLE">Article</option>
+                    <option value="EXERCISE">Exercise</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="res-difficulty-filter" className="visually-hidden">
+                    Difficulty
+                  </label>
+                  <select
+                    id="res-difficulty-filter"
+                    name="difficulty"
+                    value={difficultyFilter}
+                    onChange={(e) => setDifficultyFilter(e.target.value as DifficultyLevel | '')}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800"
+                  >
+                    <option value="">All levels</option>
+                    <option value="BEGINNER">Beginner</option>
+                    <option value="INTERMEDIATE">Intermediate</option>
+                    <option value="ADVANCED">Advanced</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="res-lang-filter" className="visually-hidden">
+                    Language
+                  </label>
+                  <select
+                    id="res-lang-filter"
+                    name="language"
+                    value={languageFilter}
+                    onChange={(e) => setLanguageFilter(e.target.value as SupportedLanguage | '')}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800"
+                  >
+                    <option value="">All langs</option>
+                    <option value="en">EN</option>
+                    <option value="tr">TR</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="res-status-filter" className="visually-hidden">
+                    Status
+                  </label>
+                  <select
+                    id="res-status-filter"
+                    name="status"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800"
+                  >
+                    <option value="ALL">All status</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </div>
+              </div>
+            </form>
+          </search>
+
+          {/* Single-Row Horizontal Scrolling Topic Filter Pills (Figma Screen 7) */}
+          <div
+            role="group"
+            aria-label="Filter resources by Python topic"
+            className="lp-tab-scroller mt-4 gap-2 pb-1"
           >
-            <div className="flex flex-col gap-1 lg:col-span-2">
-              <label htmlFor="res-search" className="text-xs font-semibold text-slate-700">
-                Search title, TF-IDF description, or URL
-              </label>
-              <input
-                id="res-search"
-                name="search"
-                type="search"
-                spellCheck={false}
-                autoCorrect="off"
-                autoCapitalize="none"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="e.g. comprehensions, itertools..."
-                className="min-h-10 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="res-topic-filter" className="text-xs font-semibold text-slate-700">
-                Topic
-              </label>
-              <select
-                id="res-topic-filter"
-                name="topic_id"
-                value={topicFilter}
-                onChange={(e) => setTopicFilter(e.target.value)}
-                className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+            <button
+              type="button"
+              aria-pressed={topicFilter === ''}
+              onClick={() => setTopicFilter('')}
+              className={cn(
+                'flex-none rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors',
+                topicFilter === ''
+                  ? 'bg-[#e6f2eb] text-[#14532d] ring-1 ring-[#9dc4ac]'
+                  : 'bg-slate-100 text-slate-600 hover:bg-[#f1f6f3] hover:text-slate-900',
+              )}
+            >
+              All Topics
+            </button>
+            {topics.map((t) => (
+              <button
+                key={t.topic_id}
+                type="button"
+                aria-pressed={topicFilter === t.topic_id}
+                onClick={(e) => {
+                  setTopicFilter(t.topic_id);
+                  e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                }}
+                className={cn(
+                  'flex-none rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors',
+                  topicFilter === t.topic_id
+                    ? 'bg-[#e6f2eb] text-[#14532d] ring-1 ring-[#9dc4ac]'
+                    : 'bg-slate-100 text-slate-600 hover:bg-[#f1f6f3] hover:text-slate-900',
+                )}
               >
-                <option value="">All topics</option>
-                {topics.map((t) => (
-                  <option key={t.topic_id} value={t.topic_id}>
-                    {t.display_order}. {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <div className="flex flex-col gap-1">
-              <label htmlFor="res-format-filter" className="text-xs font-semibold text-slate-700">
-                Format
-              </label>
-              <select
-                id="res-format-filter"
-                name="content_type"
-                value={formatFilter}
-                onChange={(e) => setFormatFilter(e.target.value as ContentType | '')}
-                className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
-              >
-                <option value="">All formats</option>
-                <option value="VIDEO">VIDEO</option>
-                <option value="ARTICLE">ARTICLE</option>
-                <option value="EXERCISE">EXERCISE</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="res-difficulty-filter"
-                className="text-xs font-semibold text-slate-700"
-              >
-                Difficulty
-              </label>
-              <select
-                id="res-difficulty-filter"
-                name="difficulty"
-                value={difficultyFilter}
-                onChange={(e) => setDifficultyFilter(e.target.value as DifficultyLevel | '')}
-                className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
-              >
-                <option value="">All levels</option>
-                <option value="BEGINNER">BEGINNER</option>
-                <option value="INTERMEDIATE">INTERMEDIATE</option>
-                <option value="ADVANCED">ADVANCED</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="res-lang-filter" className="text-xs font-semibold text-slate-700">
-                  Lang
-                </label>
-                <select
-                  id="res-lang-filter"
-                  name="language"
-                  value={languageFilter}
-                  onChange={(e) => setLanguageFilter(e.target.value as SupportedLanguage | '')}
-                  className="min-h-10 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+        {/* Resource Table */}
+        {isLoading ? (
+          <div className="p-10 text-center text-sm text-slate-600">Loading resource catalog...</div>
+        ) : resources.length === 0 ? (
+          <div className="p-10 text-center text-sm text-slate-600">
+            No resources match the selected filters.
+          </div>
+        ) : (
+          <>
+            <ResponsiveTable
+              caption="Python learning resource catalog"
+              headers={['Title', 'Type', 'Difficulty', 'Topic', 'URL / Status', 'Actions']}
+              className="rounded-none border-0 shadow-none"
+            >
+              {paginatedResources.map((res) => (
+                <tr
+                  key={res.resource_id}
+                  className={!res.is_active ? 'bg-slate-50/80 opacity-80' : undefined}
                 >
-                  <option value="">All</option>
-                  <option value="en">en</option>
-                  <option value="tr">tr</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="res-status-filter" className="text-xs font-semibold text-slate-700">
-                  Status
-                </label>
-                <select
-                  id="res-status-filter"
-                  name="status"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                  className="min-h-10 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                  <th scope="row" className="max-w-md px-5 py-3.5 align-top font-normal">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e8f3ec] text-[#14532d]">
+                        <FormatIcon type={res.content_type} />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-900">{res.title}</div>
+                        <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                          {res.description}
+                        </p>
+                      </div>
+                    </div>
+                  </th>
+
+                  <td className="px-4 py-3.5 align-middle">
+                    <Badge tone="neutral">{res.content_type}</Badge>
+                  </td>
+
+                  <td className="px-4 py-3.5 align-middle">
+                    <Badge
+                      tone={
+                        res.difficulty === 'BEGINNER'
+                          ? 'success'
+                          : res.difficulty === 'INTERMEDIATE'
+                            ? 'info'
+                            : 'warning'
+                      }
+                    >
+                      {res.difficulty.charAt(0) + res.difficulty.slice(1).toLowerCase()}
+                    </Badge>
+                  </td>
+
+                  <td className="px-4 py-3.5 align-middle text-xs font-medium text-slate-700">
+                    {res.topic_name ?? 'Topic'}
+                  </td>
+
+                  <td className="px-4 py-3.5 align-middle">
+                    <div className="flex flex-col gap-1">
+                      <a
+                        href={res.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Open external URL for ${res.title}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-[#14532d] hover:underline"
+                      >
+                        <span className="max-w-[190px] truncate">{res.external_url}</span>
+                        <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      </a>
+                      <span className="text-[11px] text-slate-500">
+                        {res.language.toUpperCase()}
+                        {res.estimated_minutes ? ` · ${res.estimated_minutes}m` : ''} ·{' '}
+                        <strong className={res.is_active ? 'text-[#14532d]' : 'text-amber-700'}>
+                          {res.is_active ? 'Active' : 'Inactive'}
+                        </strong>
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3.5 align-middle">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${res.title}`}
+                        onClick={() => openEditModal(res)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-[#14532d]/40 hover:bg-[#f2f7f4] hover:text-[#14532d]"
+                      >
+                        <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={pendingToggleId === res.resource_id}
+                        aria-label={`${res.is_active ? 'Deactivate' : 'Reactivate'} ${res.title}`}
+                        onClick={() =>
+                          toggleStatusMutation.mutate({
+                            resourceId: res.resource_id,
+                            nextActive: !res.is_active,
+                          })
+                        }
+                        className={cn(
+                          'inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors',
+                          res.is_active
+                            ? 'border-slate-200 bg-white text-red-600 hover:border-red-200 hover:bg-red-50'
+                            : 'border-[#9dc4ac] bg-[#e6f2eb] text-[#14532d] hover:bg-[#d5e8dd]',
+                        )}
+                      >
+                        {res.is_active ? (
+                          <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                        ) : (
+                          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </ResponsiveTable>
+
+            {/* Pagination Footer (Figma Screen 7) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e5ede8] px-5 py-3.5 text-xs text-slate-600">
+              <span>
+                Showing <strong className="text-slate-900">{startIdx}</strong>–
+                <strong className="text-slate-900">{endIdx}</strong> of{' '}
+                <strong className="text-slate-900">{resources.length}</strong> resources
+              </span>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
                 >
-                  <option value="ALL">All</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
-                </select>
+                  <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Previous</span>
+                </Button>
+                <span className="px-2 font-semibold text-slate-700">
+                  Page {safePage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                >
+                  <span>Next</span>
+                  <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </div>
-          </form>
-        </search>
+          </>
+        )}
       </Card>
-
-      {isLoading ? (
-        <Card className="p-8 text-center text-sm text-slate-600">Loading resource catalog...</Card>
-      ) : resources.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-slate-600">
-          No resources match the selected filters.
-        </Card>
-      ) : (
-        <ResponsiveTable
-          caption="Python learning resource catalog"
-          headers={['Resource & TF-IDF Description', 'Topic', 'Format & Level', 'Lang / Time', 'Status', 'Actions']}
-        >
-          {resources.map((res) => (
-            <tr key={res.resource_id} className={!res.is_active ? 'bg-slate-50/70' : undefined}>
-              <th scope="row" className="max-w-md px-4 py-3.5 align-top font-normal">
-                <div className="font-semibold text-slate-900">{res.title}</div>
-                <p className="mt-1 line-clamp-2 text-xs text-slate-600">{res.description}</p>
-                <a
-                  href={res.external_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Open external URL for ${res.title}`}
-                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
-                >
-                  <span className="max-w-[260px] truncate">{res.external_url}</span>
-                  <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
-                </a>
-              </th>
-              <td className="px-4 py-3.5 align-top text-slate-800">
-                <Badge tone="info">{res.topic_name ?? 'Topic'}</Badge>
-              </td>
-              <td className="px-4 py-3.5 align-top">
-                <div className="flex flex-wrap gap-1.5">
-                  <Badge tone="neutral">{res.content_type}</Badge>
-                  <Badge
-                    tone={
-                      res.difficulty === 'BEGINNER'
-                        ? 'success'
-                        : res.difficulty === 'INTERMEDIATE'
-                          ? 'info'
-                          : 'warning'
-                    }
-                  >
-                    {res.difficulty}
-                  </Badge>
-                </div>
-              </td>
-              <td className="px-4 py-3.5 align-top text-xs text-slate-700">
-                <span className="font-semibold uppercase">{res.language}</span>
-                {res.estimated_minutes ? ` · ${res.estimated_minutes} min` : ''}
-              </td>
-              <td className="px-4 py-3.5 align-top">
-                <Badge tone={res.is_active ? 'success' : 'warning'}>
-                  {res.is_active ? 'ACTIVE' : 'INACTIVE'}
-                </Badge>
-              </td>
-              <td className="px-4 py-3.5 align-top">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Edit ${res.title}`}
-                    onClick={() => openEditModal(res)}
-                  >
-                    <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant={res.is_active ? 'ghost' : 'secondary'}
-                    size="sm"
-                    isLoading={pendingToggleId === res.resource_id}
-                    aria-label={`${res.is_active ? 'Deactivate' : 'Reactivate'} ${res.title}`}
-                    onClick={() =>
-                      toggleStatusMutation.mutate({
-                        resourceId: res.resource_id,
-                        nextActive: !res.is_active,
-                      })
-                    }
-                  >
-                    {res.is_active ? (
-                      <>
-                        <Power aria-hidden="true" className="h-3.5 w-3.5 text-amber-700" />
-                        Deactivate
-                      </>
-                    ) : (
-                      <>
-                        <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                        Reactivate
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </ResponsiveTable>
-      )}
 
       <Modal
         open={isModalOpen}
@@ -488,7 +636,7 @@ export function ResourceManagerPage() {
                       openEditModal(found);
                     }
                   }}
-                  className="inline-flex items-center gap-1 font-semibold text-blue-700 underline hover:text-blue-900"
+                  className="inline-flex items-center gap-1 font-semibold text-[#14532d] underline hover:text-[#0f3f22]"
                 >
                   Edit existing resource instead &rarr;
                 </button>
