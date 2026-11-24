@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
@@ -204,7 +205,14 @@ def create_topic(
     for prereq_id in set(payload.prerequisite_topic_ids):
         db.add(TopicPrerequisite(topic_id=topic.topic_id, prerequisite_topic_id=prereq_id))
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Topic slug '{payload.slug}' already exists.",
+        ) from exc
     notify_catalog_changed()
     logger.info("Created topic slug=%s topic_id=%s", topic.slug, topic.topic_id)
     refreshed = db.scalar(
@@ -270,7 +278,14 @@ def update_topic(
                 TopicPrerequisite(topic_id=topic.topic_id, prerequisite_topic_id=prereq_id)
             )
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Topic slug '{payload.slug}' already exists.",
+        ) from exc
     notify_catalog_changed()
     logger.info("Updated topic topic_id=%s slug=%s", topic.topic_id, topic.slug)
 
@@ -405,7 +420,14 @@ def create_resource(
         is_active=True,
     )
     db.add(resource)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Duplicate URL: another resource already uses this external_url.",
+        ) from exc
     db.refresh(resource)
     notify_catalog_changed()
     logger.info("Created resource resource_id=%s topic_id=%s", resource.resource_id, topic.topic_id)
@@ -467,7 +489,14 @@ def update_resource(
     if "is_active" in fields_set and payload.is_active is not None:
         resource.is_active = payload.is_active
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Duplicate URL: another resource already uses this external_url.",
+        ) from exc
     db.refresh(resource)
     notify_catalog_changed()
     topic = db.get(Topic, resource.topic_id)

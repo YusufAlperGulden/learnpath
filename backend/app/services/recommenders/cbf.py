@@ -189,15 +189,22 @@ class ContentBasedRecommender(BaseRecommender):
         assert self._vectorizer is not None
         assert self._tfidf_matrix is not None
 
+        # Build candidate matrix read-only (never mutate cached self._tfidf_matrix across threads)
         missing = [c for c in candidates if c.resource_id not in self._index_by_resource_id]
         if missing:
-            # Transform unseen candidate descriptions with the ALREADY-fitted vectorizer (no refit!)
             extra_docs = [_compose_resource_document(c) for c in missing]
             extra_vecs = self._vectorizer.transform(extra_docs).tocsr()
-            start_idx = self._tfidf_matrix.shape[0]
-            self._tfidf_matrix = vstack([self._tfidf_matrix, extra_vecs], format="csr")
-            for offset, cand in enumerate(missing):
-                self._index_by_resource_id[cand.resource_id] = start_idx + offset
+            local_extra_pos = {cand.resource_id: idx for idx, cand in enumerate(missing)}
+            rows = [
+                self._tfidf_matrix[self._index_by_resource_id[c.resource_id]]
+                if c.resource_id in self._index_by_resource_id
+                else extra_vecs[local_extra_pos[c.resource_id]]
+                for c in candidates
+            ]
+            cand_matrix = vstack(rows, format="csr")
+        else:
+            cand_indices = [self._index_by_resource_id[c.resource_id] for c in candidates]
+            cand_matrix = self._tfidf_matrix[cand_indices]
 
         query_doc = self._build_student_query_document(candidates, context)
         profile_vec = self._vectorizer.transform([query_doc]).tocsr()
@@ -213,8 +220,6 @@ class ContentBasedRecommender(BaseRecommender):
         else:
             user_vec = profile_vec
 
-        cand_indices = [self._index_by_resource_id[c.resource_id] for c in candidates]
-        cand_matrix = self._tfidf_matrix[cand_indices]
         cos_sims = cosine_similarity(user_vec, cand_matrix).ravel()
 
         preferred_set = set(context.preferred_formats)
