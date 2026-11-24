@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -31,8 +31,28 @@ class SeedSummary:
 
 
 def seed_database(db: Session) -> SeedSummary:
-    """Populates default accounts, 6 DAG topics, 54 resources, and 36 questions idempotently."""
+    """Populates default accounts, 6 DAG topics, 54 resources, and 42 questions idempotently."""
+    existing_topics_cnt = db.scalar(select(func.count()).select_from(Topic)) or 0
+    existing_resources_cnt = db.scalar(select(func.count()).select_from(Resource)) or 0
+    existing_questions_cnt = db.scalar(select(func.count()).select_from(Question)) or 0
     admin = db.scalar(select(User).where(User.email == "admin@learnpath.local"))
+    demo_student = db.scalar(select(User).where(User.email == "student@learnpath.local"))
+
+    if (
+        admin is not None
+        and demo_student is not None
+        and existing_topics_cnt >= len(TOPICS_DATA)
+        and existing_resources_cnt >= len(RESOURCES_DATA)
+        and existing_questions_cnt >= len(QUESTIONS_DATA)
+    ):
+        return SeedSummary(
+            topics_total=int(existing_topics_cnt),
+            resources_total=int(existing_resources_cnt),
+            questions_total=int(existing_questions_cnt),
+            admin_email=admin.email,
+            demo_student_email=demo_student.email,
+        )
+
     if admin is None:
         admin = User(
             email="admin@learnpath.local",
@@ -43,7 +63,6 @@ def seed_database(db: Session) -> SeedSummary:
         db.flush()
         logger.info("Created default admin account: admin@learnpath.local")
 
-    demo_student = db.scalar(select(User).where(User.email == "student@learnpath.local"))
     if demo_student is None:
         demo_student = User(
             email="student@learnpath.local",
@@ -99,11 +118,9 @@ def seed_database(db: Session) -> SeedSummary:
                     )
                 )
 
+    existing_urls = set(db.scalars(select(Resource.external_url)).all())
     for res in RESOURCES_DATA:
-        existing_res = db.scalar(
-            select(Resource).where(Resource.external_url == res["external_url"])
-        )
-        if existing_res is None:
+        if res["external_url"] not in existing_urls:
             db.add(
                 Resource(
                     topic_id=topics_by_slug[res["topic_slug"]].topic_id,
@@ -118,6 +135,7 @@ def seed_database(db: Session) -> SeedSummary:
                     is_active=True,
                 )
             )
+            existing_urls.add(res["external_url"])
 
     existing_questions = {
         (q.topic_id, q.question_text)

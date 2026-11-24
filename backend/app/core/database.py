@@ -20,9 +20,15 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
+_connect_args: dict[str, object] = (
+    {"connect_timeout": 5} if settings.DATABASE_URL.startswith("postgresql") else {}
+)
+
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
+    pool_recycle=300,
+    connect_args=_connect_args,
     future=True,
 )
 

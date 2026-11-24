@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -159,6 +159,23 @@ def _score_latent_utility(
 def seed_interaction_cohort(db: Session, *, seed: int = COHORT_RANDOM_SEED) -> CohortSeedSummary:
     """Populates 48 cohort learners and chronological ratings idempotently."""
     seed_database(db)
+
+    existing_cohort_cnt = (
+        db.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.email.like("cohort-%@learnpath.local"))
+        )
+        or 0
+    )
+    existing_fb_cnt = db.scalar(select(func.count()).select_from(Feedback)) or 0
+    if existing_cohort_cnt >= COHORT_STUDENT_COUNT and existing_fb_cnt >= 600:
+        return CohortSeedSummary(
+            cohort_students=int(existing_cohort_cnt),
+            cold_start_students=8,
+            total_feedback_rows=int(existing_fb_cnt),
+        )
+
     rng = random.Random(seed)
 
     topics = db.scalars(select(Topic).order_by(Topic.display_order.asc())).all()
@@ -179,8 +196,8 @@ def seed_interaction_cohort(db: Session, *, seed: int = COHORT_RANDOM_SEED) -> C
             elif draw < 0.22:
                 latent_peer_bonus[(spec.code, res.resource_id)] = -0.85
 
-    # Compute password hash once so seeding 48 test learners stays sub-second
-    shared_cohort_hash = hash_password("CohortLearner123!")
+    # Compute Argon2id password hash lazily only when at least one cohort account is missing
+    shared_cohort_hash: str | None = None
     base_time = datetime(2026, 9, 15, 9, 0, 0, tzinfo=UTC)
 
     cold_start_count = 0
@@ -194,6 +211,8 @@ def seed_interaction_cohort(db: Session, *, seed: int = COHORT_RANDOM_SEED) -> C
 
         user = db.scalar(select(User).where(User.email == email))
         if user is None:
+            if shared_cohort_hash is None:
+                shared_cohort_hash = hash_password("CohortLearner123!")
             user = User(
                 email=email,
                 password_hash=shared_cohort_hash,

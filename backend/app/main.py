@@ -1,6 +1,7 @@
 """FastAPI application entry point with CORS and centralized timestamped logging."""
 
 import os
+import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -34,6 +35,15 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
             "JWT_SECRET_KEY is still the insecure development default; set a strong secret "
             "in the environment before exposing this server publicly."
         )
+    if os.getenv("LEARNPATH_DEFER_BOOTSTRAP") == "1":
+        from scripts.start_server import bootstrap_database
+
+        threading.Thread(
+            target=bootstrap_database,
+            kwargs={"max_db_attempts": 30, "delay_seconds": 2.0},
+            daemon=True,
+            name="deferred-db-bootstrap",
+        ).start()
     yield
     logger.info("Shutting down %s", settings.APP_NAME)
 
