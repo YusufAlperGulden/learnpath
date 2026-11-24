@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, GraduationCap } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, extractApiErrorMessage } from '../../api/client';
 import { Button, Card } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import type { TokenResponse } from '../../types/api';
@@ -52,10 +52,12 @@ export function AuthPage() {
         navigate('/dashboard', { replace: true });
       }
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        'Unable to complete authentication. Please verify your credentials and backend connection.';
-      setErrorMessage(detail);
+      setErrorMessage(
+        extractApiErrorMessage(
+          err,
+          'Unable to complete authentication. Please verify your credentials and backend connection.',
+        ),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -95,7 +97,11 @@ export function AuthPage() {
                 type="email"
                 required
                 autoComplete="username"
+                autoCorrect="off"
+                autoCapitalize="none"
                 spellCheck={false}
+                enterKeyHint="next"
+                aria-invalid={errorMessage ? 'true' : 'false'}
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -141,6 +147,7 @@ export function AuthPage() {
                 minLength={8}
                 autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                 aria-describedby="password-hint"
+                aria-invalid={errorMessage ? 'true' : 'false'}
                 enterKeyHint="done"
                 value={password}
                 onChange={(e) => {
