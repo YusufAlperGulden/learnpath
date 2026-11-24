@@ -213,12 +213,7 @@ class CollaborativeFilteringRecommender(BaseRecommender):
         for cand in candidates:
             pred = preds[cand.resource_id]
             format_fallback = cand.content_type not in preferred_set
-            format_bonus = 0.08 if not format_fallback else 0.0
-            final_score = (
-                round(min(1.0, pred.normalized_score + format_bonus), 6)
-                if pred.has_sufficient_support
-                else round(format_bonus, 6)
-            )
+            final_score = round(pred.normalized_score, 6) if pred.has_sufficient_support else 0.0
 
             if pred.has_sufficient_support:
                 rationale = (
@@ -229,7 +224,7 @@ class CollaborativeFilteringRecommender(BaseRecommender):
             else:
                 rationale = (
                     f"Insufficient overlapping peer ratings for {cand.topic_name} "
-                    f"(cold-start state); ordered by curriculum priority without peer extrapolation."
+                    f"(cold-start state); ordered by resource identifier without peer extrapolation."
                 )
 
             item = RankedCandidate(
@@ -241,7 +236,6 @@ class CollaborativeFilteringRecommender(BaseRecommender):
             sort_key = (
                 0 if pred.has_sufficient_support else 1,
                 -final_score,
-                cand.topic_display_order,
                 str(cand.resource_id),
             )
             scored.append((sort_key, item))

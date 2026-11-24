@@ -83,7 +83,14 @@ class ContentBasedRecommender(BaseRecommender):
 
     strategy_name = "cbf"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        use_profile_features: bool = True,
+        use_assessment_features: bool = True,
+    ) -> None:
+        self.use_profile_features = use_profile_features
+        self.use_assessment_features = use_assessment_features
         self._vectorizer: TfidfVectorizer | None = None
         self._tfidf_matrix: csr_matrix | None = None
         self._index_by_resource_id: dict[UUID, int] = {}
@@ -125,28 +132,46 @@ class ContentBasedRecommender(BaseRecommender):
         candidates: Sequence[CandidateResource],
         context: StudentRecommendationContext,
     ) -> str:
-        goal_key = context.learning_goal.strip().upper()
-        goal_terms = _GOAL_QUERY_EXPANSION.get(
-            goal_key,
-            context.learning_goal.replace("_", " ").lower(),
-        )
-        format_terms = " ".join(
-            f"format_{fmt.value.lower()} {fmt.value.lower()}"
-            for fmt in context.preferred_formats
-        )
-        topic_names = " ".join({c.topic_name for c in candidates})
-        target_levels = {
-            _target_difficulty(
-                context.topic_scores.get(c.topic_id),
-                context.experience_level,
-            ).value.lower()
-            for c in candidates
-        }
-        level_terms = " ".join(
-            f"level_{lvl} {lvl}"
-            for lvl in (target_levels or {context.experience_level.value.lower()})
-        )
-        return f"{goal_terms} {topic_names} {format_terms} {level_terms}"
+        parts: list[str] = []
+        if self.use_profile_features:
+            goal_key = context.learning_goal.strip().upper()
+            goal_terms = _GOAL_QUERY_EXPANSION.get(
+                goal_key,
+                context.learning_goal.replace("_", " ").lower(),
+            )
+            format_terms = " ".join(
+                f"format_{fmt.value.lower()} {fmt.value.lower()}"
+                for fmt in context.preferred_formats
+            )
+            parts.extend([goal_terms, format_terms])
+
+        if self.use_assessment_features:
+            study_topics = {
+                c.topic_name
+                for c in candidates
+                if context.topic_mastery.get(c.topic_id, MasteryStatus.UNKNOWN)
+                != MasteryStatus.MASTERED
+            }
+            topic_names = " ".join(sorted(study_topics or {c.topic_name for c in candidates}))
+        else:
+            topic_names = " ".join(sorted({c.topic_name for c in candidates}))
+        parts.append(topic_names)
+
+        target_levels: set[str] = set()
+        for c in candidates:
+            t_score = context.topic_scores.get(c.topic_id) if self.use_assessment_features else None
+            if t_score is not None:
+                target_levels.add(
+                    _target_difficulty(t_score, ExperienceLevel.INTERMEDIATE).value.lower()
+                )
+            elif self.use_profile_features:
+                target_levels.add(context.experience_level.value.lower())
+
+        if target_levels:
+            level_terms = " ".join(f"level_{lvl} {lvl}" for lvl in sorted(target_levels))
+            parts.append(level_terms)
+
+        return " ".join(p for p in parts if p)
 
     def compute_cbf_scores(
         self,
@@ -198,26 +223,44 @@ class ContentBasedRecommender(BaseRecommender):
         results: dict[UUID, tuple[float, list[str]]] = {}
         for pos, cand in enumerate(candidates):
             tfidf_sim = float(max(0.0, min(1.0, cos_sims[pos])))
-            topic_score = context.topic_scores.get(cand.topic_id)
-            mastery = context.topic_mastery.get(cand.topic_id, MasteryStatus.UNKNOWN)
+            topic_score = (
+                context.topic_scores.get(cand.topic_id) if self.use_assessment_features else None
+            )
+            mastery = (
+                context.topic_mastery.get(cand.topic_id, MasteryStatus.UNKNOWN)
+                if self.use_assessment_features
+                else MasteryStatus.UNKNOWN
+            )
 
-            target_diff = _target_difficulty(topic_score, context.experience_level)
-            diff_compat = _difficulty_compatibility(cand.difficulty, target_diff)
-            format_compat = 1.0 if cand.content_type in preferred_set else 0.15
-
-            if mastery == MasteryStatus.NEEDS_PRACTICE and topic_score is not None:
-                urgency = 1.0 - min(max(topic_score, 0.0), threshold) / 100.0
-            elif mastery == MasteryStatus.UNKNOWN:
-                urgency = max(0.4, 0.75 - cand.topic_display_order * 0.05)
+            if topic_score is not None:
+                target_diff = _target_difficulty(topic_score, ExperienceLevel.INTERMEDIATE)
+                diff_compat = _difficulty_compatibility(cand.difficulty, target_diff)
+            elif self.use_profile_features:
+                target_diff = DifficultyLevel(context.experience_level.value)
+                diff_compat = _difficulty_compatibility(cand.difficulty, target_diff)
             else:
-                urgency = 0.3
+                diff_compat = 0.55
+
+            if self.use_profile_features:
+                format_compat = 1.0 if cand.content_type in preferred_set else 0.15
+            else:
+                format_compat = 0.50
+
+            if not self.use_assessment_features:
+                urgency = 0.50
+            elif mastery == MasteryStatus.NEEDS_PRACTICE and topic_score is not None:
+                urgency = 1.0 - min(max(topic_score, 0.0), threshold) / 200.0
+            elif mastery == MasteryStatus.UNKNOWN:
+                urgency = max(0.45, 0.72 - cand.topic_display_order * 0.04)
+            else:
+                urgency = 0.15
 
             # Blend TF-IDF cosine similarity with structured profile/proficiency signals -> [0..1]
             blended = (
-                0.45 * tfidf_sim
+                0.40 * tfidf_sim
                 + 0.25 * format_compat
-                + 0.20 * diff_compat
-                + 0.10 * urgency
+                + 0.18 * diff_compat
+                + 0.17 * urgency
             )
             norm_score = round(float(max(0.0, min(1.0, blended))), 6)
 
@@ -313,7 +356,7 @@ class ContentBasedRecommender(BaseRecommender):
         preferred_set = set(context.preferred_formats)
         cbf_map = self.compute_cbf_scores(candidates, context)
 
-        scored: list[tuple[tuple[float, int, str], RankedCandidate]] = []
+        scored: list[tuple[tuple[float, str], RankedCandidate]] = []
         for cand in candidates:
             score_val, top_terms = cbf_map[cand.resource_id]
             format_fallback = cand.content_type not in preferred_set
@@ -329,7 +372,7 @@ class ContentBasedRecommender(BaseRecommender):
                 rationale=rationale,
                 format_fallback_used=format_fallback,
             )
-            scored.append(((-score_val, cand.topic_display_order, str(cand.resource_id)), item))
+            scored.append(((-score_val, str(cand.resource_id)), item))
 
         scored.sort(key=lambda pair: pair[0])
         return [item for _, item in scored[:limit]]

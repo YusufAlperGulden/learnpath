@@ -4,11 +4,14 @@ Follows RAD v2.0 Section 2.4 & Section 3.4.4:
 1. Deduplicates repeated `(student_id, resource_id)` pairs prior to splitting (retaining latest).
 2. Splits strictly chronologically into Train (70%), Validation (15%), and Test (15%).
 3. Treats ratings >= 4 as relevant positive ground truth.
-4. Tunes Hybrid `cbf_weight` exclusively on the Validation split (fitted only on Train).
+4. Enforces identical prerequisite-unlocked, language-matched unseen candidate pools across models.
+5. Tunes Hybrid `cbf_weight` exclusively on the Validation split (fitted only on Train).
 """
 
+from __future__ import annotations
+
+import argparse
 import json
-import math
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -19,7 +22,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.database import SessionLocal
 from app.core.enums import (
     ContentType,
     DifficultyLevel,
@@ -39,12 +41,36 @@ from app.services.recommenders import (
     InteractionRecord,
     StudentRecommendationContext,
 )
+from experiments.metrics import (
+    ndcg_at_k,
+    open_experiment_session,
+    precision_at_k,
+    recall_at_k,
+)
 from scripts.seed_interactions import seed_interaction_cohort
 
 logger = get_logger("experiments.split")
 
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
 RELEVANCE_RATING_THRESHOLD = 4.0
+
+__all__ = [
+    "ARTIFACTS_DIR",
+    "RELEVANCE_RATING_THRESHOLD",
+    "ChronologicalSplit",
+    "SplitAndTuningReport",
+    "WeightGridPoint",
+    "build_offline_student_context",
+    "deduplicate_interactions",
+    "get_eligible_unseen_candidates",
+    "load_active_catalog_candidates",
+    "ndcg_at_k",
+    "precision_at_k",
+    "recall_at_k",
+    "run_split_and_validation_tuning",
+    "select_hybrid_weight_on_validation",
+    "split_interactions_chronologically",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +92,7 @@ class WeightGridPoint:
     validation_ndcg_at_5: float
     validation_precision_at_5: float
     evaluated_users: int
+    excluded_zero_relevant_users: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,35 +189,6 @@ def split_interactions_chronologically(
     )
 
 
-def precision_at_k(recommended_ids: Sequence[UUID], relevant_ids: set[UUID], k: int = 5) -> float:
-    if k <= 0:
-        return 0.0
-    top_k = list(recommended_ids)[:k]
-    hits = sum(1 for rid in top_k if rid in relevant_ids)
-    return hits / k
-
-
-def recall_at_k(recommended_ids: Sequence[UUID], relevant_ids: set[UUID], k: int = 5) -> float:
-    if not relevant_ids or k <= 0:
-        return 0.0
-    top_k = list(recommended_ids)[:k]
-    hits = sum(1 for rid in top_k if rid in relevant_ids)
-    return hits / len(relevant_ids)
-
-
-def ndcg_at_k(recommended_ids: Sequence[UUID], relevant_ids: set[UUID], k: int = 5) -> float:
-    if not relevant_ids or k <= 0:
-        return 0.0
-    top_k = list(recommended_ids)[:k]
-    dcg = 0.0
-    for idx, rid in enumerate(top_k):
-        if rid in relevant_ids:
-            dcg += 1.0 / math.log2(idx + 2)
-    ideal_hits = min(len(relevant_ids), k)
-    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_hits))
-    return dcg / idcg if idcg > 0.0 else 0.0
-
-
 def load_active_catalog_candidates(db: Session) -> list[CandidateResource]:
     rows = db.scalars(
         select(Resource)
@@ -198,7 +196,7 @@ def load_active_catalog_candidates(db: Session) -> list[CandidateResource]:
         .where(Resource.is_active.is_(True))
         .order_by(Resource.resource_id.asc())
     ).all()
-    return [
+    candidates = [
         CandidateResource(
             resource_id=r.resource_id,
             topic_id=r.topic_id,
@@ -213,6 +211,28 @@ def load_active_catalog_candidates(db: Session) -> list[CandidateResource]:
             estimated_minutes=r.estimated_minutes,
         )
         for r in rows
+    ]
+    candidates.sort(key=lambda c: str(c.resource_id))
+    return candidates
+
+
+def get_eligible_unseen_candidates(
+    db: Session,
+    *,
+    student_id: UUID,
+    preferred_language: SupportedLanguage,
+    seen_resource_ids: set[UUID],
+    catalog: Sequence[CandidateResource],
+) -> list[CandidateResource]:
+    """Returns identical prerequisite-unlocked, language-matched, unseen candidates for a query."""
+    path = compute_learning_path(db, student_id=student_id)
+    unlocked_topic_ids = {node.topic_id for node in path.nodes if not node.is_locked}
+    return [
+        c
+        for c in catalog
+        if c.language == preferred_language
+        and c.topic_id in unlocked_topic_ids
+        and c.resource_id not in seen_resource_ids
     ]
 
 
@@ -266,22 +286,24 @@ def select_hybrid_weight_on_validation(
     *,
     k: int = 5,
     weight_grid: Sequence[float] = (0.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0),
+    cbf_recommender: ContentBasedRecommender | None = None,
 ) -> tuple[float, list[WeightGridPoint]]:
     """Selects Hybrid `cbf_weight` solely on the Validation partition (fitted on Train only)."""
     catalog = load_active_catalog_candidates(db)
-    cbf = ContentBasedRecommender().fit(catalog)
+    cbf = cbf_recommender if cbf_recommender is not None else ContentBasedRecommender().fit(catalog)
+    if not cbf.is_fitted:
+        cbf.fit(catalog)
     cf = CollaborativeFilteringRecommender().fit(split.train)
 
     train_by_user: dict[UUID, list[InteractionRecord]] = defaultdict(list)
     for rec in split.train:
         train_by_user[rec.student_id].append(rec)
 
-    val_relevant_by_user: dict[UUID, set[UUID]] = defaultdict(set)
+    val_by_user: dict[UUID, list[InteractionRecord]] = defaultdict(list)
     for rec in split.validation:
-        if rec.rating >= RELEVANCE_RATING_THRESHOLD:
-            val_relevant_by_user[rec.student_id].add(rec.resource_id)
+        val_by_user[rec.student_id].append(rec)
 
-    eval_user_ids = sorted(val_relevant_by_user.keys(), key=str)
+    eval_user_ids = sorted(val_by_user.keys(), key=str)
     users_by_id = {
         u.user_id: u
         for u in db.scalars(
@@ -290,6 +312,36 @@ def select_hybrid_weight_on_validation(
             .where(User.user_id.in_(eval_user_ids))
         ).all()
     }
+
+    # Precompute student contexts and eligible candidate pools once per validation user
+    prepared_queries: list[
+        tuple[StudentRecommendationContext, list[CandidateResource], set[UUID]]
+    ] = []
+    excluded_zero_rel = 0
+    for uid in eval_user_ids:
+        user = users_by_id.get(uid)
+        if user is None:
+            continue
+        hist = train_by_user.get(uid, [])
+        seen_train_ids = {r.resource_id for r in hist}
+        ctx = build_offline_student_context(db, user, hist)
+        eligible_candidates = get_eligible_unseen_candidates(
+            db,
+            student_id=uid,
+            preferred_language=ctx.preferred_language,
+            seen_resource_ids=seen_train_ids,
+            catalog=catalog,
+        )
+        eligible_ids = {c.resource_id for c in eligible_candidates}
+        rel_ids = {
+            r.resource_id
+            for r in val_by_user[uid]
+            if r.rating >= RELEVANCE_RATING_THRESHOLD and r.resource_id in eligible_ids
+        }
+        if not rel_ids:
+            excluded_zero_rel += 1
+            continue
+        prepared_queries.append((ctx, eligible_candidates, rel_ids))
 
     grid_points: list[WeightGridPoint] = []
     best_weight = 0.60
@@ -301,20 +353,9 @@ def select_hybrid_weight_on_validation(
         ndcgs: list[float] = []
         precisions: list[float] = []
 
-        for uid in eval_user_ids:
-            user = users_by_id.get(uid)
-            if user is None:
-                continue
-            seen_train_ids = {r.resource_id for r in train_by_user.get(uid, [])}
-            ctx = build_offline_student_context(db, user, train_by_user.get(uid, []))
-            unseen_candidates = [
-                c
-                for c in catalog
-                if c.resource_id not in seen_train_ids and c.language == ctx.preferred_language
-            ]
-            ranked = hybrid.rank(unseen_candidates, ctx, limit=k)
+        for ctx, eligible_candidates, rel_ids in prepared_queries:
+            ranked = hybrid.rank(eligible_candidates, ctx, limit=k)
             rec_ids = [item.candidate.resource_id for item in ranked]
-            rel_ids = val_relevant_by_user[uid]
             ndcgs.append(ndcg_at_k(rec_ids, rel_ids, k=k))
             precisions.append(precision_at_k(rec_ids, rel_ids, k=k))
 
@@ -327,6 +368,7 @@ def select_hybrid_weight_on_validation(
                 validation_ndcg_at_5=mean_ndcg,
                 validation_precision_at_5=mean_prec,
                 evaluated_users=len(ndcgs),
+                excluded_zero_relevant_users=excluded_zero_rel,
             )
         )
         # Prefer interior hybrid weights over extremes when validation NDCG ties
@@ -339,17 +381,14 @@ def select_hybrid_weight_on_validation(
     return best_weight, grid_points
 
 
-def run_split_and_validation_tuning(
-    db: Session,
-    *,
-    write_artifacts: bool = True,
-) -> SplitAndTuningReport:
+def load_or_seed_interactions(db: Session) -> list[InteractionRecord]:
+    """Loads persisted feedback rows, seeding the documented 48-learner cohort if empty."""
     raw_rows = db.scalars(select(Feedback)).all()
     if len(raw_rows) < 50:
         seed_interaction_cohort(db)
         raw_rows = db.scalars(select(Feedback)).all()
 
-    interactions = [
+    return [
         InteractionRecord(
             student_id=row.student_id,
             resource_id=row.resource_id,
@@ -358,6 +397,14 @@ def run_split_and_validation_tuning(
         )
         for row in raw_rows
     ]
+
+
+def run_split_and_validation_tuning(
+    db: Session,
+    *,
+    write_artifacts: bool = True,
+) -> SplitAndTuningReport:
+    interactions = load_or_seed_interactions(db)
     split = split_interactions_chronologically(interactions)
     best_weight, grid_points = select_hybrid_weight_on_validation(db, split)
     best_ndcg = max((pt.validation_ndcg_at_5 for pt in grid_points), default=0.0)
@@ -396,7 +443,8 @@ def run_split_and_validation_tuning(
             encoding="utf-8",
         )
         logger.info(
-            "Saved split & validation tuning artifacts: train=%d val=%d test=%d best_cbf_weight=%.2f (val NDCG@5=%.4f)",
+            "Saved split & validation tuning artifacts: train=%d val=%d test=%d "
+            "best_cbf_weight=%.2f (val NDCG@5=%.4f)",
             report.train_size,
             report.validation_size,
             report.test_size,
@@ -408,8 +456,19 @@ def run_split_and_validation_tuning(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run chronological Train/Val/Test split and validation Hybrid weight tuning."
+    )
+    parser.add_argument(
+        "--db",
+        choices=("auto", "postgres", "sqlite"),
+        default="auto",
+        help="Database connection mode (defaults to 'auto').",
+    )
+    args = parser.parse_args()
+
     configure_logging()
-    with SessionLocal() as db:
+    with open_experiment_session(args.db) as (db, _backend):
         report = run_split_and_validation_tuning(db, write_artifacts=True)
         print(json.dumps(asdict(report), indent=2))
 
