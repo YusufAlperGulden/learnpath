@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
@@ -41,13 +42,21 @@ def register_student(
             detail="An account with this email address already exists.",
         )
 
+    # Profile row is created on PUT /api/v1/profile so has_profile=False drives UC01 onboarding
     user = User(
         email=normalized_email,
         password_hash=hash_password(payload.password),
         role=UserRole.STUDENT.value,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists.",
+        ) from exc
     db.refresh(user)
 
     access_token = create_access_token(user_id=user.user_id, role=UserRole.STUDENT)

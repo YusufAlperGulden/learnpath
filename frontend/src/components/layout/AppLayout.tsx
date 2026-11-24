@@ -148,10 +148,12 @@ export function AppLayout({
 
   const handleQuickSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const trimmed = quickQuery.trim();
+    const suffix = trimmed ? `?q=${encodeURIComponent(trimmed)}` : '';
     if (user?.role === 'ADMIN') {
-      navigate('/admin/resources');
+      navigate(`/admin/resources${suffix}`);
     } else {
-      navigate('/recommendations');
+      navigate(`/recommendations${suffix}`);
     }
   };
 

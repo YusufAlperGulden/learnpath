@@ -24,6 +24,7 @@ _GOAL_KEYWORDS: dict[str, tuple[str, ...]] = {
     "DATA_SCIENCE": ("data", "numeric", "precision", "clean", "pipeline", "tabular", "aggregation"),
     "WEB_DEVELOPMENT": ("api", "backend", "payload", "network", "unicode", "modular", "routing"),
     "AUTOMATION": ("automation", "script", "stream", "log", "file", "state", "workflow"),
+    "ALGORITHMS_PREP": ("algorithm", "complexity", "iteration", "structure", "loop", "function"),
     "PYTHON_FUNDAMENTALS": ("beginner", "fundamental", "step-by-step", "visual", "core", "basics"),
 }
 

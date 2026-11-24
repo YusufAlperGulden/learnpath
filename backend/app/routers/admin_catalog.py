@@ -205,6 +205,7 @@ def create_topic(
         db.add(TopicPrerequisite(topic_id=topic.topic_id, prerequisite_topic_id=prereq_id))
 
     db.commit()
+    notify_catalog_changed()
     logger.info("Created topic slug=%s topic_id=%s", topic.slug, topic.topic_id)
     refreshed = db.scalar(
         select(Topic)
@@ -323,6 +324,7 @@ def delete_topic(
 
     db.delete(topic)
     db.commit()
+    notify_catalog_changed()
     logger.info("Deleted unreferenced topic topic_id=%s", topic_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

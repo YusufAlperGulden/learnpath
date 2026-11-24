@@ -30,7 +30,11 @@ const GOAL_CHOICES = [
   },
   {
     value: 'WEB_DEVELOPMENT',
-    label: 'Backend Engineering & Scripting Automation',
+    label: 'Backend Engineering & Web APIs',
+  },
+  {
+    value: 'AUTOMATION',
+    label: 'Scripting & Workflow Automation',
   },
   {
     value: 'ALGORITHMS_PREP',

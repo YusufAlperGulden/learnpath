@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -61,8 +61,9 @@ function FormatIcon({ type }: { type: ContentType }) {
 
 export function ResourceManagerPage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [topicFilter, setTopicFilter] = useState('');
   const [formatFilter, setFormatFilter] = useState<ContentType | ''>('');
   const [difficultyFilter, setDifficultyFilter] = useState<DifficultyLevel | ''>('');
