@@ -1,6 +1,8 @@
-"""Prerequisite-aware learning path and explainable recommendation orchestration (FR05–FR07)."""
+"""Prerequisite-aware learning path and 5-strategy explainable recommendation service."""
 
+import json
 import time
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -28,8 +30,19 @@ from app.schemas.recommendation import (
     RecommendedResourceItem,
     RecommenderStrategy,
 )
+from app.services.dag_validator import (
+    get_catalog_generation,
+    register_catalog_invalidation_hook,
+)
 from app.services.recommenders import (
+    DEFAULT_VALIDATED_CBF_WEIGHT,
     CandidateResource,
+    CollaborativeFilteringRecommender,
+    ContentBasedRecommender,
+    HybridRecommender,
+    InteractionRecord,
+    PopularityRecommender,
+    RankedCandidate,
     RuleBasedRecommender,
     StudentRecommendationContext,
 )
@@ -37,7 +50,76 @@ from app.services.recommenders import (
 logger = get_logger("recommendations")
 
 MAX_PRIORITY_TOPICS = 3
+HYBRID_TUNING_ARTIFACT = (
+    Path(__file__).resolve().parents[2] / "experiments" / "artifacts" / "hybrid_tuning.json"
+)
+
 _rule_recommender = RuleBasedRecommender()
+
+# In-memory TF-IDF cache invalidated automatically on admin catalog mutations (NFR-05 < 200ms)
+_cached_cbf: ContentBasedRecommender | None = None
+_cached_cbf_signature: tuple[int, tuple[str, ...]] | None = None
+
+
+def invalidate_tfidf_cache() -> None:
+    global _cached_cbf, _cached_cbf_signature
+    _cached_cbf = None
+    _cached_cbf_signature = None
+
+
+register_catalog_invalidation_hook(invalidate_tfidf_cache)
+
+
+def _get_or_fit_cached_cbf(db: Session) -> ContentBasedRecommender:
+    global _cached_cbf, _cached_cbf_signature
+
+    active_rows = db.scalars(
+        select(Resource)
+        .options(selectinload(Resource.topic))
+        .where(Resource.is_active.is_(True))
+        .order_by(Resource.resource_id.asc())
+    ).all()
+
+    sig = (
+        get_catalog_generation(),
+        tuple(str(r.resource_id) for r in active_rows),
+    )
+    if _cached_cbf is not None and _cached_cbf_signature == sig:
+        return _cached_cbf
+
+    corpus = [
+        CandidateResource(
+            resource_id=r.resource_id,
+            topic_id=r.topic_id,
+            topic_name=r.topic.name if r.topic else "Python",
+            topic_display_order=r.topic.display_order if r.topic else 0,
+            title=r.title,
+            description=r.description,
+            external_url=r.external_url,
+            content_type=ContentType(r.content_type),
+            difficulty=DifficultyLevel(r.difficulty),
+            language=SupportedLanguage(r.language),
+            estimated_minutes=r.estimated_minutes,
+        )
+        for r in active_rows
+    ]
+    cbf = ContentBasedRecommender().fit(corpus)
+    _cached_cbf = cbf
+    _cached_cbf_signature = sig
+    return cbf
+
+
+def get_validated_hybrid_cbf_weight() -> float:
+    """Loads validation-selected hybrid CBF weight if available, else returns default 0.60."""
+    if HYBRID_TUNING_ARTIFACT.is_file():
+        try:
+            data = json.loads(HYBRID_TUNING_ARTIFACT.read_text(encoding="utf-8"))
+            val = float(data.get("selected_cbf_weight", DEFAULT_VALIDATED_CBF_WEIGHT))
+            if 0.0 <= val <= 1.0:
+                return val
+        except (ValueError, OSError):
+            pass
+    return DEFAULT_VALIDATED_CBF_WEIGHT
 
 
 def _select_recommended_next_topic_id(nodes: list[LearningPathNode]) -> UUID | None:
@@ -128,7 +210,6 @@ def _find_unlocked_unmet_ancestors(
     target_node: LearningPathNode,
     nodes_by_id: dict[UUID, LearningPathNode],
 ) -> list[LearningPathNode]:
-    """Walks prerequisite links upwards to find unlocked unmet prerequisite topics (FR05)."""
     found: dict[UUID, LearningPathNode] = {}
     visited: set[UUID] = set()
     stack: list[UUID] = list(target_node.unmet_prerequisite_ids)
@@ -191,7 +272,6 @@ def _resolve_priority_topics(
     if combined:
         return combined, False, None
 
-    # All unlocked topics are MASTERED -> allow advanced enrichment on unlocked topics
     unlocked_all = sorted(
         [n for n in path.nodes if not n.is_locked],
         key=lambda n: (
@@ -202,6 +282,19 @@ def _resolve_priority_topics(
     return unlocked_all[:MAX_PRIORITY_TOPICS], False, None
 
 
+def _load_all_interactions(db: Session) -> list[InteractionRecord]:
+    rows = db.scalars(select(Feedback)).all()
+    return [
+        InteractionRecord(
+            student_id=row.student_id,
+            resource_id=row.resource_id,
+            rating=float(row.rating),
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
 def generate_student_recommendations(
     db: Session,
     *,
@@ -210,7 +303,7 @@ def generate_student_recommendations(
     limit: int = 5,
     target_topic_id: UUID | None = None,
 ) -> RecommendationResponse:
-    """Filters eligible unseen resources and produces explainable recommendations (< 2.0s NFR-05)."""
+    """Filters eligible unseen resources and ranks via the selected strategy (< 2.0s NFR-05)."""
     started = time.perf_counter()
 
     profile = student.profile
@@ -247,7 +340,7 @@ def generate_student_recommendations(
 
     if not priority_nodes:
         return RecommendationResponse(
-            strategy_used="rule_based",
+            strategy_used=strategy,
             fallback_applied=fallback_applied,
             fallback_reason=fallback_reason,
             priority_topics=[],
@@ -264,6 +357,17 @@ def generate_student_recommendations(
                 ResourceProgress.status == ResourceProgressStatus.COMPLETED.value,
             )
         ).all()
+    )
+
+    student_feedback_rows = db.scalars(
+        select(Feedback).where(Feedback.student_id == student.user_id)
+    ).all()
+    user_ratings = {fb.resource_id: float(fb.rating) for fb in student_feedback_rows}
+    positive_history = tuple(
+        sorted(
+            {rid for rid, r in user_ratings.items() if r >= 4.0} | completed_resource_ids,
+            key=str,
+        )
     )
 
     stmt = select(Resource).where(
@@ -314,16 +418,38 @@ def generate_student_recommendations(
             if n.latest_score_percent is not None
         },
         topic_mastery={n.topic_id: n.mastery_status for n in path.nodes},
+        positive_history_resource_ids=positive_history,
+        user_ratings=user_ratings,
     )
 
-    strategy_used: RecommenderStrategy = strategy
-    if strategy != "rule_based":
-        # Increment 5 registers popularity, cbf, cf, and hybrid into this dispatcher
-        strategy_used = "rule_based"
-        fallback_applied = True
-        fallback_reason = fallback_reason or f"strategy_{strategy}_fallback_to_rule_based"
-
-    ranked = _rule_recommender.rank(candidate_pool, context, limit=limit)
+    ranked: list[RankedCandidate]
+    if strategy == "rule_based":
+        ranked = _rule_recommender.rank(candidate_pool, context, limit=limit)
+    elif strategy == "popularity":
+        pop_ranker = PopularityRecommender().fit(_load_all_interactions(db))
+        ranked = pop_ranker.rank(candidate_pool, context, limit=limit)
+    elif strategy == "cbf":
+        cbf_ranker = _get_or_fit_cached_cbf(db)
+        ranked = cbf_ranker.rank(candidate_pool, context, limit=limit)
+    elif strategy == "cf":
+        cf_ranker = CollaborativeFilteringRecommender().fit(_load_all_interactions(db))
+        if candidate_pool and not cf_ranker.has_collaborative_support(candidate_pool, context):
+            fallback_applied = True
+            fallback_reason = fallback_reason or "cold_start_insufficient_neighbors"
+        ranked = cf_ranker.rank(candidate_pool, context, limit=limit)
+    else:  # strategy == "hybrid"
+        cbf_ranker = _get_or_fit_cached_cbf(db)
+        cf_ranker = CollaborativeFilteringRecommender().fit(_load_all_interactions(db))
+        hybrid_ranker = HybridRecommender(
+            cbf=cbf_ranker,
+            cf=cf_ranker,
+            cbf_weight=get_validated_hybrid_cbf_weight(),
+        )
+        outcome = hybrid_ranker.rank_with_diagnostics(candidate_pool, context, limit=limit)
+        ranked = outcome.items
+        if outcome.cold_start_fallback and candidate_pool:
+            fallback_applied = True
+            fallback_reason = fallback_reason or "cold_start_insufficient_neighbors"
 
     if any(item.format_fallback_used for item in ranked):
         fallback_applied = True
@@ -333,7 +459,6 @@ def generate_student_recommendations(
     ranked_ids = [entry.candidate.resource_id for entry in ranked]
     bookmarked_ids: set[UUID] = set()
     opened_by_id: dict[UUID, ResourceProgressStatus] = {}
-    feedback_by_id: dict[UUID, Feedback] = {}
 
     if ranked_ids:
         bookmarked_ids = set(
@@ -353,15 +478,8 @@ def generate_student_recommendations(
                 )
             ).all()
         }
-        feedback_by_id = {
-            fb.resource_id: fb
-            for fb in db.scalars(
-                select(Feedback).where(
-                    Feedback.student_id == student.user_id,
-                    Feedback.resource_id.in_(ranked_ids),
-                )
-            ).all()
-        }
+
+    feedback_comment_by_id = {fb.resource_id: fb.comment for fb in student_feedback_rows}
 
     items = [
         RecommendedResourceItem(
@@ -382,15 +500,11 @@ def generate_student_recommendations(
             progress_status=opened_by_id.get(entry.candidate.resource_id),
             is_bookmarked=entry.candidate.resource_id in bookmarked_ids,
             my_rating=(
-                feedback_by_id[entry.candidate.resource_id].rating
-                if entry.candidate.resource_id in feedback_by_id
+                int(user_ratings[entry.candidate.resource_id])
+                if entry.candidate.resource_id in user_ratings
                 else None
             ),
-            my_comment=(
-                feedback_by_id[entry.candidate.resource_id].comment
-                if entry.candidate.resource_id in feedback_by_id
-                else None
-            ),
+            my_comment=feedback_comment_by_id.get(entry.candidate.resource_id),
         )
         for idx, entry in enumerate(ranked, start=1)
     ]
@@ -399,14 +513,14 @@ def generate_student_recommendations(
     logger.info(
         "Generated recommendations student_id=%s strategy=%s items=%d fallback=%s duration_ms=%.2f",
         student.user_id,
-        strategy_used,
+        strategy,
         len(items),
         fallback_reason,
         elapsed_ms,
     )
 
     return RecommendationResponse(
-        strategy_used=strategy_used,
+        strategy_used=strategy,
         fallback_applied=fallback_applied,
         fallback_reason=fallback_reason,
         priority_topics=priority_summaries,

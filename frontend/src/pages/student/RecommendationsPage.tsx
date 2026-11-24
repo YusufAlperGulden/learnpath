@@ -27,8 +27,27 @@ import {
   type FeedbackTarget,
 } from '../../components/student/FeedbackModal';
 import { Badge, Button, Card, cn } from '../../components/ui';
+import type { RecommenderStrategy } from '../../types/api';
+
+const VALID_STRATEGIES: RecommenderStrategy[] = [
+  'hybrid',
+  'cbf',
+  'cf',
+  'popularity',
+  'rule_based',
+];
+
+function parseStrategyParam(raw: string | null): RecommenderStrategy {
+  if (raw && (VALID_STRATEGIES as string[]).includes(raw)) {
+    return raw as RecommenderStrategy;
+  }
+  return 'hybrid';
+}
 
 function describeFallbackReason(reason: string | null): string {
+  if (reason === 'cold_start_insufficient_neighbors') {
+    return 'Cold-Start Safeguard Active: Insufficient overlapping peer ratings exist for your profile yet, so rankings and explanations automatically switched to Content-Based TF-IDF and proficiency signals without fabricating peer claims.';
+  }
   if (reason === 'preferred_format_relaxed') {
     return 'Fewer than 5 unseen resources matched your exact preferred format(s), so additional formats were transparently included and badged below.';
   }
@@ -37,13 +56,14 @@ function describeFallbackReason(reason: string | null): string {
   }
   return reason
     ? `Fallback applied (${reason}).`
-    : 'Format or prerequisite fallback was applied to ensure relevant study options.';
+    : 'Format, prerequisite, or cold-start fallback was applied to ensure relevant study options.';
 }
 
 export function RecommendationsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTopicId = searchParams.get('topicId') || '';
+  const selectedStrategy = parseStrategyParam(searchParams.get('strategy'));
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
 
   useEffect(() => {
@@ -56,14 +76,21 @@ export function RecommendationsPage() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['recommendations', 'rule_based', selectedTopicId],
+    queryKey: ['recommendations', selectedStrategy, selectedTopicId],
     queryFn: () =>
       studentApi.getRecommendations({
-        strategy: 'rule_based',
+        strategy: selectedStrategy,
         limit: 5,
         topic_id: selectedTopicId || undefined,
       }),
   });
+
+  const updateFilterParams = (nextTopicId: string, nextStrategy: RecommenderStrategy) => {
+    const next: Record<string, string> = {};
+    if (nextTopicId) next.topicId = nextTopicId;
+    if (nextStrategy !== 'hybrid') next.strategy = nextStrategy;
+    setSearchParams(next);
+  };
 
   const invalidateAfterInteraction = async () => {
     await Promise.all([
@@ -121,10 +148,7 @@ export function RecommendationsPage() {
               id="rec-topic-filter"
               name="topic_id"
               value={selectedTopicId}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSearchParams(val ? { topicId: val } : {});
-              }}
+              onChange={(e) => updateFilterParams(e.target.value, selectedStrategy)}
               className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
             >
               <option value="">Automatic Priority Topics (Recommended)</option>
@@ -136,8 +160,29 @@ export function RecommendationsPage() {
             </select>
           </div>
 
+          <div className="flex flex-col gap-1">
+            <label htmlFor="rec-strategy-select" className="text-xs font-semibold text-slate-700">
+              Ranking model (5-method architecture)
+            </label>
+            <select
+              id="rec-strategy-select"
+              name="strategy"
+              value={selectedStrategy}
+              onChange={(e) =>
+                updateFilterParams(selectedTopicId, e.target.value as RecommenderStrategy)
+              }
+              className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+            >
+              <option value="hybrid">Weighted Hybrid (CBF + CF, Default)</option>
+              <option value="cbf">Content-Based Filtering (TF-IDF)</option>
+              <option value="cf">Collaborative Filtering (User-Resource Matrix)</option>
+              <option value="popularity">Popularity Baseline (Empirical Ratings)</option>
+              <option value="rule_based">Rule-Based Prototype (Heuristic)</option>
+            </select>
+          </div>
+
           <div className="flex items-center gap-2 pb-1">
-            <Badge tone="info">Active Strategy: {data?.strategy_used ?? 'rule_based'}</Badge>
+            <Badge tone="info">Served Strategy: {data?.strategy_used ?? selectedStrategy}</Badge>
           </div>
         </div>
 
