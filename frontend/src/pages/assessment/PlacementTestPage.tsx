@@ -49,6 +49,7 @@ export function PlacementTestPage() {
   >({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [pendingReconnectSync, setPendingReconnectSync] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   const [isSkipConfirmOpen, setIsSkipConfirmOpen] = useState(false);
 
@@ -195,6 +196,7 @@ export function PlacementTestPage() {
         );
         window.sessionStorage.removeItem(key);
       }
+      setPendingReconnectSync(false);
       setIsSkipConfirmOpen(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['learning-path'] }),
@@ -205,6 +207,15 @@ export function PlacementTestPage() {
     },
     onError: (err: unknown) => {
       setIsSkipConfirmOpen(false);
+      const isNetworkDrop = !(err as { response?: unknown })?.response;
+      if (isNetworkDrop) {
+        setPendingReconnectSync(true);
+        setSubmitError(
+          'Network connection interrupted. Your draft answers are saved locally and will automatically sync as soon as you reconnect.',
+        );
+        return;
+      }
+      setPendingReconnectSync(false);
       setSubmitError(
         extractApiErrorMessage(
           err,
@@ -213,6 +224,19 @@ export function PlacementTestPage() {
       );
     },
   });
+
+  // Scenario 1 Alternative Flow 4a: Auto-retry saved draft submission when browser reconnects
+  useEffect(() => {
+    if (!pendingReconnectSync || !session) return;
+    const handleOnline = () => {
+      if (!submitMutation.isPending) {
+        setSubmitError(null);
+        submitMutation.mutate();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [pendingReconnectSync, session, submitMutation]);
 
   const handleExamSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

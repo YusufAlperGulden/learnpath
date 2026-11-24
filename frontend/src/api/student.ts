@@ -51,6 +51,7 @@ export const studentApi = {
     strategy?: RecommenderStrategy;
     limit?: number;
     topic_id?: string;
+    include_completed?: boolean;
   } = {}): Promise<RecommendationResponse> =>
     (await apiClient.get<RecommendationResponse>('/recommendations', { params })).data,
 

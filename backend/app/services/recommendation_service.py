@@ -302,6 +302,7 @@ def generate_student_recommendations(
     strategy: RecommenderStrategy = "rule_based",
     limit: int = 5,
     target_topic_id: UUID | None = None,
+    include_completed: bool = False,
 ) -> RecommendationResponse:
     """Filters eligible unseen resources and ranks via the selected strategy (< 2.0s NFR-05)."""
     started = time.perf_counter()
@@ -375,7 +376,7 @@ def generate_student_recommendations(
         Resource.topic_id.in_(priority_ids),
         Resource.language == preferred_language.value,
     )
-    if completed_resource_ids:
+    if completed_resource_ids and not include_completed:
         stmt = stmt.where(Resource.resource_id.notin_(completed_resource_ids))
 
     raw_resources = db.scalars(stmt).all()

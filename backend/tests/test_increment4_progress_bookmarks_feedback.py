@@ -167,6 +167,14 @@ def test_opened_vs_completed_resource_progress_and_recommendation_rotation(
     returned_ids = {item["resource_id"] for item in after_comp_recs["items"]}
     assert top_res_id not in returned_ids
 
+    # 4. Explicit revision action (?include_completed=true) re-offers completed items (RAD 3.4.4.3)
+    revision_recs = client.get(
+        "/api/v1/recommendations?limit=5&include_completed=true",
+        headers=student_headers,
+    ).json()
+    revision_ids = {item["resource_id"] for item in revision_recs["items"]}
+    assert top_res_id in revision_ids
+
     history = client.get(
         "/api/v1/progress/resources/history",
         headers=student_headers,
