@@ -29,6 +29,11 @@ logger = get_logger("main")
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging(debug=settings.DEBUG)
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
+    if settings.JWT_SECRET_KEY.startswith("change-this"):
+        logger.warning(
+            "JWT_SECRET_KEY is still the insecure development default; set a strong secret "
+            "in the environment before exposing this server publicly."
+        )
     yield
     logger.info("Shutting down %s", settings.APP_NAME)
 

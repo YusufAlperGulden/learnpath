@@ -173,21 +173,22 @@ export function RecommendationsPage() {
   );
 
   const topicBreakdown = useMemo(() => {
+    const lockedById = new Map(nodes.map((n) => [n.topic_id, n.is_locked]));
     if (attemptDetail && attemptDetail.topic_scores.length > 0) {
       return attemptDetail.topic_scores.map((ts) => ({
         topic_id: ts.topic_id,
         name: ts.topic_name,
-        percent: Math.round(ts.score_percent),
+        percent: Math.round(ts.score_percent) as number | null,
         status: ts.mastery_status,
+        isLocked: lockedById.get(ts.topic_id) ?? false,
       }));
     }
     return nodes.map((n) => ({
       topic_id: n.topic_id,
       name: n.name,
-      percent: Math.round(
-        n.latest_score_percent ?? (n.mastery_status === 'MASTERED' ? 100 : 0),
-      ),
+      percent: n.latest_score_percent === null ? null : Math.round(n.latest_score_percent),
       status: n.mastery_status as MasteryStatus,
+      isLocked: n.is_locked,
     }));
   }, [attemptDetail, nodes]);
 
@@ -195,13 +196,12 @@ export function RecommendationsPage() {
     const items = data?.items ?? [];
     if (!keywordQuery) return items;
     const needle = keywordQuery.toLowerCase();
-    const matched = items.filter(
+    return items.filter(
       (it) =>
         it.title.toLowerCase().includes(needle) ||
         it.description.toLowerCase().includes(needle) ||
         it.topic_name.toLowerCase().includes(needle),
     );
-    return matched.length > 0 ? matched : items;
   }, [data?.items, keywordQuery]);
 
   return (
@@ -224,11 +224,12 @@ export function RecommendationsPage() {
                   {attemptDetail.test_type === 'DIAGNOSTIC' ? 'Placement' : 'Topic Quiz'}
                 </Badge>
               ) : (
-                <Badge tone="warning">Unassessed</Badge>
+                <Badge tone="warning">No test taken yet</Badge>
               )}
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
-              Overall Score: <strong className="text-slate-800">{overallScore} / 100</strong>
+              {attemptDetail ? 'Overall Score: ' : 'Curriculum mastery (no placement test yet): '}
+              <strong className="text-slate-800">{overallScore} / 100</strong>
             </p>
           </div>
 
@@ -315,25 +316,33 @@ export function RecommendationsPage() {
           ) : (
             <ul className="space-y-3">
               {topicBreakdown.map((tb) => {
-                const isMastered = tb.status === 'MASTERED' || tb.percent >= 70;
-                const isPriority = tb.percent < 50 && !isMastered;
+                const pct = tb.percent;
+                const notAssessed = pct === null;
+                const isMastered = !notAssessed && (tb.status === 'MASTERED' || pct >= 70);
+                const isPriority = !notAssessed && pct < 50 && !isMastered;
                 const barClass = isMastered
                   ? 'bg-[#14532d]'
                   : isPriority
                     ? 'bg-amber-500'
                     : 'bg-[#5c9a76]';
-                const statusLabel = isMastered
-                  ? 'Mastered'
-                  : tb.status === 'NEEDS_PRACTICE'
-                    ? 'Needs Practice'
-                    : 'Priority Focus';
+                const statusLabel = tb.isLocked
+                  ? 'Locked'
+                  : notAssessed
+                    ? 'Not assessed yet'
+                    : isMastered
+                      ? 'Mastered'
+                      : isPriority
+                        ? 'Priority Focus'
+                        : 'Needs Practice';
 
                 return (
                   <li key={tb.topic_id} className="space-y-1">
                     <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="font-semibold text-slate-800">{tb.name}</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-700">{tb.percent}%</span>
+                        <span className="font-bold text-slate-700">
+                          {notAssessed ? '—' : `${pct}%`}
+                        </span>
                         <span
                           className={cn(
                             'text-[11px] font-semibold',
@@ -346,20 +355,24 @@ export function RecommendationsPage() {
                         >
                           · {statusLabel}
                         </span>
-                        <Link
-                          to={`/assessment?type=TOPIC_QUIZ&topicId=${tb.topic_id}`}
-                          aria-label={`Start Topic Quiz for ${tb.name}`}
-                          className="rounded bg-[#e6f2eb] px-2 py-0.5 text-[10px] font-bold text-[#14532d] hover:bg-[#d3e7db]"
-                        >
-                          Quiz
-                        </Link>
+                        {!tb.isLocked ? (
+                          <Link
+                            to={`/assessment?type=TOPIC_QUIZ&topicId=${tb.topic_id}`}
+                            aria-label={`Start Topic Quiz for ${tb.name}`}
+                            className="rounded bg-[#e6f2eb] px-2 py-0.5 text-[10px] font-bold text-[#14532d] hover:bg-[#d3e7db]"
+                          >
+                            Quiz
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3ece6]">
-                      <div
-                        className={cn('h-full rounded-full transition-all', barClass)}
-                        style={{ width: `${Math.min(Math.max(tb.percent, 4), 100)}%` }}
-                      />
+                      {!notAssessed ? (
+                        <div
+                          className={cn('h-full rounded-full transition-all', barClass)}
+                          style={{ width: `${Math.min(Math.max(pct, 4), 100)}%` }}
+                        />
+                      ) : null}
                     </div>
                   </li>
                 );
@@ -520,6 +533,21 @@ export function RecommendationsPage() {
                 Revise Profile Preferences
               </Link>
             </div>
+          </Card>
+        ) : visibleItems.length === 0 ? (
+          <Card role="status" className="space-y-3 p-8 text-center text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">
+              None of your current recommendations match &ldquo;{keywordQuery}&rdquo;.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                updateFilterParams(selectedTopicId, selectedStrategy, includeCompleted, '')
+              }
+            >
+              Clear search
+            </Button>
           </Card>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
