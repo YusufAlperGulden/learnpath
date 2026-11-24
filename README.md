@@ -1,40 +1,91 @@
-# LearnPath (COME 491 Capstone Project — v2.0)
+# LearnPath — Personalized Python Learning Path & Explainable Resource Recommendation System
 
-Personalized Python Learning Path & Explainable Resource Recommendation System, 100% synchronized with the Revised Requirements Analysis Document (RAD v2.0).
+**COME 491 Graduation Project (Revised RAD v2.0)**
 
-## Architecture Overview
+LearnPath is an end-to-end personalized Python fundamentals learning platform and comparative recommender-system research testbed. Students configure learning goals and format preferences, take diagnostic or topic-specific Python code assessments, track prerequisite-gated curriculum mastery on an interactive DAG roadmap, and receive transparent, explainable learning resource recommendations across five live strategies (`rule_based`, `popularity`, `cbf`, `cf`, and `hybrid`).
 
-- **Backend (`backend/`)**: Python 3.11+ (tested on Python 3.14), FastAPI, SQLAlchemy 2.0, Alembic, Psycopg 3 (`postgresql+psycopg://`), PyJWT + Argon2 (`pwdlib`), Scikit-learn.
-- **Database**: PostgreSQL 16 via Docker Compose (13 normalized tables including `topic_progress`, soft-deleted `resources`, and versioned `questions`).
-- **Frontend (`frontend/`)**: React 18, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query, React Flow (`@xyflow/react`), Recharts, Prism React Renderer.
-- **Offline Evaluation (`backend/experiments/`)**: Chronological split, Popularity / CBF / CF / Hybrid comparison, `Precision@5`, `Recall@5`, `NDCG@5`, `Catalog Coverage`, `Intra-List Diversity`, `Latency (p50/p95)`, and paired bootstrap ablation (`RQ1`–`RQ4`).
+---
 
-## Quick Start
+## 1. System Architecture & Stack
 
-### 1. Start PostgreSQL 16
+| Layer | Technology Stack | Key Responsibilities |
+| :--- | :--- | :--- |
+| **Frontend (`frontend/`)** | React 18, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query, `@xyflow/react`, Recharts, Prism | Auth & onboarding, stateless diagnostic/topic exam UI with skipped-question warnings, item-level solution review, DAG roadmap, live 5-strategy recommendations, study library, and admin catalog studio |
+| **Backend (`backend/app/`)** | Python 3.11+ (verified on Python 3.14), FastAPI, SQLAlchemy 2.0, Alembic, Psycopg 3 (`postgresql+psycopg://`), PyJWT, Argon2 (`pwdlib`), Scikit-learn | RBAC auth, cycle-safe DAG catalog & immutable question versioning, atomic assessment grading, dual progress tracking (`OPENED`/`COMPLETED` vs. exam mastery), and `< 200 ms` cached TF-IDF/CF/Hybrid recommenders |
+| **Database (`docker-compose.yml`)** | PostgreSQL 16 (`learnpath` + `learnpath_test` via `docker/postgres/init-test-db.sql`) | Exact 13 normalized tables (`users`, `student_profiles`, `topics`, `topic_prerequisites`, `resources`, `questions`, `test_attempts`, `answers`, `topic_scores`, `topic_progress`, `resource_progress`, `saved_resources`, `feedback`) |
+| **Research Suite (`backend/experiments/`)** | Scikit-learn (`TfidfVectorizer`, `cosine_similarity`), NumPy, SciPy | Leak-free `70/15/15` chronological split, validation-only Hybrid tuning, `RQ1`–`RQ4` evaluation, `NFR-05` HTTP latency verification, and paired student-level bootstrap (`B = 1000`) |
 
-Make sure Docker Desktop is running, then from the repository root:
+### Repository Layout
+
+```text
+learnpath/
+├── docker-compose.yml                 # PostgreSQL 16 container + healthcheck
+├── docker/postgres/init-test-db.sql   # Auto-creates learnpath_test database
+├── .env.example                       # Environment configuration template
+├── backend/
+│   ├── alembic/                       # 13-table schema migration history
+│   ├── app/
+│   │   ├── core/                      # Config, enums, Argon2/JWT security, RBAC deps, logging
+│   │   ├── models/                    # 13 SQLAlchemy 2.0 ORM models
+│   │   ├── schemas/                   # Strict Pydantic v2 request/response contracts
+│   │   ├── services/                  # DAG validator, atomic grading, progress, 5 recommenders
+│   │   └── routers/                   # /api/v1/{auth,profile,assessments,recommendations,progress,admin}
+│   ├── scripts/                       # Idempotent curriculum & 48-student cohort seeders
+│   ├── experiments/                   # split_dataset.py, evaluate_models.py, run_ablation.py, EVALUATION_REPORT.md
+│   └── tests/                         # Full pytest verification suite (Increments 1–6)
+└── frontend/
+    └── src/
+        ├── api/                       # Typed Axios API clients + JWT interceptor
+        ├── components/                # Accessible UI primitives (<dialog>, CodeSnippetBlock, etc.)
+        └── pages/                     # Student & Admin screens (Figma Figures 3–7)
+```
+
+---
+
+## 2. Clean Setup & Local Run Guide
+
+### Prerequisites
+- **Python** `3.11+` (tested on `Python 3.14.6`)
+- **Node.js** `20+` and `npm`
+- **Docker Desktop** (for PostgreSQL 16; offline experiments and `pytest` also support isolated in-memory SQLite automatically when Docker is stopped)
+
+### Step 1 — Environment & PostgreSQL 16
+
+From the repository root:
 
 ```powershell
-cp .env.example .env   # Adjust POSTGRES_PORT if 5432 is already occupied locally
+Copy-Item .env.example .env
+# Note: If native PostgreSQL already occupies localhost:5432, set POSTGRES_PORT=5433
+# and update DATABASE_URL / TEST_DATABASE_URL ports to 5433 in .env.
 docker compose up -d
 ```
 
-### 2. Set Up Backend & Apply 13-Table Schema
+### Step 2 — Backend Virtual Environment, Migrations & Seed Data
 
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+# Apply the 13-table PostgreSQL schema
 alembic upgrade head
+
+# Seed 6 Python DAG topics, 54 curated resources (en & tr), 36 code questions, and demo users
 python -m scripts.seed_data
+
+# (Optional) Seed the 48-student interaction cohort (~622 chronological 1–5 ratings) for CF/Hybrid
+python -m scripts.seed_interactions
+
+# Start the FastAPI server on http://localhost:8000
 uvicorn app.main:app --reload --port 8000
 ```
 
-Interactive OpenAPI docs are served at `http://localhost:8000/docs`.
+Interactive OpenAPI documentation is available at `http://localhost:8000/docs`.
 
-### 3. Set Up Frontend
+### Step 3 — Frontend Development Server & Production Build
+
+Open a second terminal:
 
 ```powershell
 cd frontend
@@ -42,18 +93,60 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in Chrome, Firefox, or Edge.
+Visit `http://localhost:5173` in Chrome, Firefox, or Edge.
 
-### Default Seeded Accounts (`scripts.seed_data`)
+### Default Seeded Demo Accounts
 
-| Role | Email | Password | Seeded Catalog |
+| Role | Email | Password | Seeded State |
 | :--- | :--- | :--- | :--- |
-| `ADMIN` | `admin@learnpath.local` | `AdminPass123!` | 6 DAG topics, 54 resources (`en` & `tr`), 36 code-snippet questions |
-| `STUDENT` | `student@learnpath.local` | `StudentPass123!` | Pre-configured `BEGINNER` profile (`VIDEO`, `EXERCISE`) |
+| `ADMIN` | `admin@learnpath.local` | `AdminPass123!` | Full access to Topic DAG, Question Versioning, and Resource Catalog Studio |
+| `STUDENT` | `student@learnpath.local` | `StudentPass123!` | Cold-start `BEGINNER` profile (`PYTHON_FUNDAMENTALS`, `VIDEO` + `EXERCISE`, `en`) |
+| `STUDENT (Cohort)` | `cohort-01@learnpath.local` .. `cohort-48@learnpath.local` | `CohortLearner123!` | `cohort-01..40` warm-start learners; `cohort-41..48` cold-start test learners |
 
-## Key Engineering Rules (RAD v2.0)
+---
 
-1. **Answer Key Confidentiality (`FR03`)**: Assessment question delivery never exposes `correct_option` or `explanation`; a signed `test_session_token` binds `student_id`, `attempt_id`, and `question_ids` without creating orphan draft DB rows.
-2. **Atomic & Idempotent Exam Submission (`NFR-04`)**: `POST /api/v1/assessments/submit` persists `TestAttempt`, `Answer` (nullable `selected_option` for skipped questions), `TopicScore`, and `TopicProgress` in a single database transaction.
-3. **Latest-Attempt Mastery Recalculation (`FR05`, `FR08`)**: `topic_progress.mastery_status` recalculates from the latest attempt (`>= 70%` -> `MASTERED`, `< 70%` -> `NEEDS_PRACTICE`), while `is_manually_completed` tracks self-paced study independently.
-4. **Cold-Start Honesty (`FR07`)**: When collaborative evidence is insufficient, Hybrid falls back to content/profile signals and never fabricates collaborative rationale strings.
+## 3. Reproducing Offline Research Experiments (`RQ1`–`RQ4` & `NFR-05`)
+
+All experiment scripts live in `backend/experiments/` and support `--db auto` (default: uses PostgreSQL if running, or falls back cleanly to an isolated in-memory database seeded deterministically with `seed = 4912026`).
+
+```powershell
+cd backend
+
+# 1. Pre-split deduplication, 70/15/15 chronological split, and Validation-only Hybrid weight tuning
+.\.venv\Scripts\python.exe -m experiments.split_dataset
+
+# 2. RQ1, RQ2, RQ4 model benchmark + paired bootstrap 95% CIs + NFR-05 (< 2.0s) HTTP latency check
+.\.venv\Scripts\python.exe -m experiments.evaluate_models
+
+# 3. RQ3 feature & collaborative-evidence ablation study + regenerate EVALUATION_REPORT.md
+.\.venv\Scripts\python.exe -m experiments.run_ablation
+```
+
+- Human-readable academic tables, paired student-level bootstrap intervals (`B = 1000`), slice analyses, latency percentiles, and methodological limitations are committed at [`backend/experiments/EVALUATION_REPORT.md`](backend/experiments/EVALUATION_REPORT.md).
+- Raw machine-readable JSON outputs (`split_summary.json`, `hybrid_tuning.json`, `model_evaluation.json`, `ablation_results.json`) are written to `backend/experiments/artifacts/`.
+
+---
+
+## 4. Quality Gates & Automated Verification
+
+```powershell
+# Backend lint, migration DDL check, and full pytest suite
+cd backend
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head --sql
+.\.venv\Scripts\pytest.exe -v
+
+# Frontend strict TypeScript check and production bundle build
+cd ..\frontend
+npm run build
+```
+
+---
+
+## 5. Core RAD v2.0 Invariants Enforced
+
+1. **Answer-Key Confidentiality & Zero Draft Orphans (`FR03`)**: `GET /api/v1/assessments/questions` never serializes `correct_option` or `explanation` and writes zero DB rows until submission, binding `student_id`, `attempt_id`, and `question_ids` inside a signed `test_session_token`.
+2. **Atomic, Idempotent Grading & Skipped-Question Support (`FR04`, `NFR-04`)**: `POST /api/v1/assessments/submit` commits `TestAttempt`, `Answer` (`selected_option = NULL` recorded as `is_correct = False`), `TopicScore`, and `TopicProgress` in one transaction with duplicate-click idempotency on `attempt_id`.
+3. **Dual Progress & Latest-Attempt Mastery (`FR05`, `FR08`)**: `OPENED` resource clicks never mark resources `COMPLETED`; manual topic checkboxes (`is_manually_completed`) never unlock DAG prerequisites; exam mastery (`>= 70%` -> `MASTERED`, `< 70%` -> `NEEDS_PRACTICE`) recalculates truthfully from the latest attempt.
+4. **Catalog Audit Integrity (`FR11`, `FR12`)**: Historical resources use soft deactivation (`is_active = False`), and editing an already-answered question preserves the old version untouched while creating `version + 1` linked via `previous_question_id`.
+5. **Cold-Start Honesty & Leak-Free ML (`Section 3.4.4`, `FR07`)**: Unrated items remain strictly unknown (never imputed as `0`), `TfidfVectorizer` and `CF`/`Popularity` never see test labels, and `Hybrid` falls back to content/profile signals (`fallback_reason = "cold_start_insufficient_neighbors"`) without fabricating peer claims when neighbor support is unavailable.

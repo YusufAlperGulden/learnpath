@@ -105,14 +105,21 @@ class CohortSeedSummary:
 def _score_latent_utility(
     res: Resource,
     spec: ArchetypeSpec,
+    weak_topic_id: UUID,
     latent_peer_bonus: dict[tuple[str, UUID], float],
     rng: random.Random,
 ) -> int:
-    """Computes a realistic 1..5 integer rating driven by content fit + peer latent affinity."""
-    base = 2.2
+    """Computes a realistic 1..5 integer rating driven by topic gap, content fit, and peer affinity."""
+    base = 2.05
+
+    # Active topic-gap relevance vs. already-mastered review material
+    if res.topic_id == weak_topic_id:
+        base += 0.65
+    else:
+        base -= 0.20
 
     if ContentType(res.content_type) in spec.formats:
-        base += 1.05
+        base += 0.95
     else:
         base -= 0.55
 
@@ -121,22 +128,31 @@ def _score_latent_utility(
         DifficultyLevel.INTERMEDIATE.value: 1,
         DifficultyLevel.ADVANCED.value: 2,
     }
-    diff_gap = abs(tier_pos[res.difficulty] - tier_pos[spec.experience.value])
+    target_tier = (
+        DifficultyLevel.BEGINNER.value
+        if res.topic_id == weak_topic_id and spec.weak_score < 45.0
+        else (
+            DifficultyLevel.INTERMEDIATE.value
+            if res.topic_id == weak_topic_id and spec.weak_score < 70.0
+            else spec.experience.value
+        )
+    )
+    diff_gap = abs(tier_pos[res.difficulty] - tier_pos[target_tier])
     if diff_gap == 0:
-        base += 0.75
+        base += 0.65
     elif diff_gap == 1:
-        base += 0.15
+        base += 0.10
     else:
-        base -= 0.65
+        base -= 0.60
 
     text_blob = f"{res.title} {res.description}".lower()
     kw_hits = sum(1 for kw in spec.preferred_keywords if kw in text_blob)
-    base += min(0.55, kw_hits * 0.22)
+    base += min(0.45, kw_hits * 0.20)
 
     # Collaborative peer-gem signal shared across learners of the same archetype
     base += latent_peer_bonus.get((spec.code, res.resource_id), 0.0)
 
-    noisy = base + rng.gauss(0.0, 0.32)
+    noisy = base + rng.gauss(0.0, 0.28)
     return max(1, min(5, round(noisy)))
 
 
@@ -158,10 +174,10 @@ def seed_interaction_cohort(db: Session, *, seed: int = COHORT_RANDOM_SEED) -> C
     for spec in ARCHETYPES:
         for res in en_resources:
             draw = rng.random()
-            if draw > 0.80:
-                latent_peer_bonus[(spec.code, res.resource_id)] = 0.85
-            elif draw < 0.18:
-                latent_peer_bonus[(spec.code, res.resource_id)] = -0.70
+            if draw > 0.76:
+                latent_peer_bonus[(spec.code, res.resource_id)] = 1.05
+            elif draw < 0.22:
+                latent_peer_bonus[(spec.code, res.resource_id)] = -0.85
 
     # Compute password hash once so seeding 48 test learners stays sub-second
     shared_cohort_hash = hash_password("CohortLearner123!")
@@ -232,36 +248,44 @@ def seed_interaction_cohort(db: Session, *, seed: int = COHORT_RANDOM_SEED) -> C
         if existing_fb_ids:
             continue
 
-        relevant_topic_ids = {
+        unlocked_topic_ids = {
             topics_by_slug[s].topic_id for s in (*spec.mastered_slugs, spec.weak_slug)
         }
-        pool = [r for r in en_resources if r.topic_id in relevant_topic_ids]
-        other_pool = [r for r in en_resources if r.topic_id not in relevant_topic_ids]
+        weak_tid = topics_by_slug[spec.weak_slug].topic_id
+        unlocked_pool = [r for r in en_resources if r.topic_id in unlocked_topic_ids]
+        mastered_pool = [r for r in unlocked_pool if r.topic_id != weak_tid]
+        weak_pool = [r for r in unlocked_pool if r.topic_id == weak_tid]
 
         if is_cold_start:
-            # Cold-start learners have 0 historical train ratings and 3 late test-window ratings
+            # Cold-start learners have 0 train/val history and 4 late test-window ratings in unlocked topics
             chosen_early: list[Resource] = []
-            weak_tid = topics_by_slug[spec.weak_slug].topic_id
-            weak_candidates = [r for r in en_resources if r.topic_id == weak_tid]
-            chosen_late = rng.sample(weak_candidates, k=min(4, len(weak_candidates)))
+            weak_sample = rng.sample(weak_pool, k=min(3, len(weak_pool)))
+            mastered_sample = rng.sample(mastered_pool, k=min(1, len(mastered_pool)))
+            chosen_late = weak_sample + mastered_sample
         else:
-            early_k = min(13, len(pool))
-            chosen_early = rng.sample(pool, k=early_k)
-            remaining = [r for r in (pool + other_pool[:4]) if r not in chosen_early]
-            # Ensure late interactions focus on the learner's active priority topic(s)
-            weak_tid = topics_by_slug[spec.weak_slug].topic_id
-            weak_remaining = [r for r in remaining if r.topic_id == weak_tid]
-            other_remaining = [r for r in remaining if r.topic_id != weak_tid]
-            late_pool = weak_remaining + other_remaining
-            chosen_late = late_pool[: min(5, len(late_pool))]
+            # Keep >= 8 unlocked resources unseen after early history so top-5 ranking is non-trivial
+            early_mastered_k = min(9, max(4, len(mastered_pool) - 3))
+            early_weak_k = min(2, len(weak_pool))
+            chosen_early = (
+                rng.sample(mastered_pool, k=early_mastered_k)
+                + rng.sample(weak_pool, k=early_weak_k)
+            )
+            rng.shuffle(chosen_early)
 
-        # Early interactions fall in days 1..40 (Train / Validation window)
+            remaining_weak = [r for r in weak_pool if r not in chosen_early]
+            remaining_mastered = [r for r in mastered_pool if r not in chosen_early]
+            late_weak = rng.sample(remaining_weak, k=min(3, len(remaining_weak)))
+            late_mastered = rng.sample(remaining_mastered, k=min(2, len(remaining_mastered)))
+            chosen_late = late_weak + late_mastered
+            rng.shuffle(chosen_late)
+
+        # Early interactions fall in days 1..38 (Train window)
         for step_idx, res in enumerate(chosen_early):
             ts = base_time + timedelta(
                 days=1 + (step_idx * 3) + rng.uniform(0.0, 1.8),
                 minutes=idx * 7,
             )
-            rating = _score_latent_utility(res, spec, latent_peer_bonus, rng)
+            rating = _score_latent_utility(res, spec, weak_tid, latent_peer_bonus, rng)
             db.add(
                 Feedback(
                     student_id=user.user_id,
@@ -272,14 +296,20 @@ def seed_interaction_cohort(db: Session, *, seed: int = COHORT_RANDOM_SEED) -> C
                 )
             )
 
-        # Late interactions fall in days 45..58 (Validation / Test evaluation window)
+        # Late interactions: warm learners span Validation (days 44..51) & Test (days 53..64);
+        # cold-start learners fall strictly in the Test window (days 57..65) with 0 train/val leakage.
         for late_idx, res in enumerate(chosen_late):
-            ts = base_time + timedelta(
-                days=45 + late_idx * 3 + (10 if is_cold_start else rng.uniform(0.0, 8.0)),
-                minutes=idx * 11,
-            )
-            # Ensure each learner evaluates both high-utility and lower-utility items in test window
-            rating = _score_latent_utility(res, spec, latent_peer_bonus, rng)
+            if is_cold_start:
+                day_offset = 57.0 + late_idx * 2.0 + rng.uniform(0.0, 0.9)
+            else:
+                # First 2 late items land in Validation window (days 44..50); remaining land in Test (days 54..63)
+                if late_idx < 2:
+                    day_offset = 44.0 + late_idx * 2.5 + rng.uniform(0.0, 2.2)
+                else:
+                    day_offset = 54.0 + (late_idx - 2) * 2.8 + rng.uniform(0.0, 2.4)
+
+            ts = base_time + timedelta(days=day_offset, minutes=idx * 11)
+            rating = _score_latent_utility(res, spec, weak_tid, latent_peer_bonus, rng)
             db.add(
                 Feedback(
                     student_id=user.user_id,
