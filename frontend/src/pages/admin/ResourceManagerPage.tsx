@@ -49,6 +49,7 @@ export function ResourceManagerPage() {
   const [editingResource, setEditingResource] = useState<ResourceAdminRead | null>(null);
   const [formState, setFormState] = useState<ResourceFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [duplicateResourceId, setDuplicateResourceId] = useState<string | null>(null);
   const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,6 +114,7 @@ export function ResourceManagerPage() {
       setIsModalOpen(false);
       setEditingResource(null);
       setFormError(null);
+      setDuplicateResourceId(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin', 'resources'] }),
         queryClient.invalidateQueries({ queryKey: ['admin', 'topics'] }),
@@ -120,15 +122,17 @@ export function ResourceManagerPage() {
     },
     onError: (err: unknown) => {
       if (err instanceof Error && !('response' in err)) {
+        setDuplicateResourceId(null);
         setFormError(err.message);
         return;
       }
-      setFormError(
-        extractApiErrorMessage(
-          err,
-          'Could not save resource. Check URL format and mandatory TF-IDF description.',
-        ),
+      const msg = extractApiErrorMessage(
+        err,
+        'Could not save resource. Check URL format and mandatory TF-IDF description.',
       );
+      const idMatch = msg.match(/resource_id=([0-9a-f-]{36})/i);
+      setDuplicateResourceId(idMatch ? idMatch[1] : null);
+      setFormError(msg);
     },
   });
 
@@ -462,9 +466,33 @@ export function ResourceManagerPage() {
           {formError ? (
             <div
               role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+              className="space-y-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
             >
-              {formError}
+              <p>{formError}</p>
+              {duplicateResourceId ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const localMatch = resources.find((r) => r.resource_id === duplicateResourceId);
+                    if (localMatch) {
+                      setDuplicateResourceId(null);
+                      openEditModal(localMatch);
+                      return;
+                    }
+                    const allMatches = await adminApi.listResources({
+                      search: formState.external_url.trim(),
+                    });
+                    const found = allMatches.find((r) => r.resource_id === duplicateResourceId);
+                    if (found) {
+                      setDuplicateResourceId(null);
+                      openEditModal(found);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 font-semibold text-blue-700 underline hover:text-blue-900"
+                >
+                  Edit existing resource instead &rarr;
+                </button>
+              ) : null}
             </div>
           ) : null}
 

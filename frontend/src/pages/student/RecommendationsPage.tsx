@@ -64,6 +64,7 @@ export function RecommendationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTopicId = searchParams.get('topicId') || '';
   const selectedStrategy = parseStrategyParam(searchParams.get('strategy'));
+  const includeCompleted = searchParams.get('revision') === '1';
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
 
   useEffect(() => {
@@ -75,20 +76,26 @@ export function RecommendationsPage() {
     queryFn: studentApi.getLearningPath,
   });
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['recommendations', selectedStrategy, selectedTopicId],
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['recommendations', selectedStrategy, selectedTopicId, includeCompleted],
     queryFn: () =>
       studentApi.getRecommendations({
         strategy: selectedStrategy,
         limit: 5,
         topic_id: selectedTopicId || undefined,
+        include_completed: includeCompleted || undefined,
       }),
   });
 
-  const updateFilterParams = (nextTopicId: string, nextStrategy: RecommenderStrategy) => {
+  const updateFilterParams = (
+    nextTopicId: string,
+    nextStrategy: RecommenderStrategy,
+    nextRevision: boolean = includeCompleted,
+  ) => {
     const next: Record<string, string> = {};
     if (nextTopicId) next.topicId = nextTopicId;
     if (nextStrategy !== 'hybrid') next.strategy = nextStrategy;
+    if (nextRevision) next.revision = '1';
     setSearchParams(next);
   };
 
@@ -184,6 +191,25 @@ export function RecommendationsPage() {
           <div className="flex items-center gap-2 pb-1">
             <Badge tone="info">Served Strategy: {data?.strategy_used ?? selectedStrategy}</Badge>
           </div>
+
+          <div className="flex items-center gap-2 pb-1">
+            <input
+              id="rec-include-completed"
+              name="include_completed"
+              type="checkbox"
+              checked={includeCompleted}
+              onChange={(e) =>
+                updateFilterParams(selectedTopicId, selectedStrategy, e.target.checked)
+              }
+              className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-blue-600"
+            />
+            <label
+              htmlFor="rec-include-completed"
+              className="cursor-pointer text-xs font-semibold text-slate-700"
+            >
+              Include completed for revision
+            </label>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
@@ -277,9 +303,39 @@ export function RecommendationsPage() {
         <Card className="p-8 text-center text-sm text-slate-600">
           Ranking personalized learning resources...
         </Card>
+      ) : isError ? (
+        <Card role="alert" className="space-y-3 border-red-200 bg-red-50 p-6 text-center text-sm text-red-900">
+          <p className="font-semibold">
+            Could not load recommendations right now. Your saved assessments and progress are safe.
+          </p>
+          <div>
+            <Button size="sm" variant="primary" onClick={() => void refetch()}>
+              Retry Recommendations
+            </Button>
+          </div>
+        </Card>
       ) : !data || data.items.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-slate-600">
-          No unseen active resources remain for your current filter and language preference.
+        <Card className="space-y-3 p-8 text-center text-sm text-slate-700">
+          <p className="font-semibold text-slate-900">
+            No unseen active resources remain for your current filter and language preference.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3 pt-1">
+            {!includeCompleted ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => updateFilterParams(selectedTopicId, selectedStrategy, true)}
+              >
+                Offer Completed Resources for Revision
+              </Button>
+            ) : null}
+            <Link
+              to="/profile/setup"
+              className="inline-flex min-h-9 items-center rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+            >
+              Revise Profile Preferences
+            </Link>
+          </div>
         </Card>
       ) : (
         <div className="space-y-4">
@@ -309,6 +365,8 @@ export function RecommendationsPage() {
                     </span>
                     {item.progress_status === 'OPENED' ? (
                       <Badge tone="info">OPENED</Badge>
+                    ) : item.progress_status === 'COMPLETED' ? (
+                      <Badge tone="success">COMPLETED · Revision</Badge>
                     ) : null}
                     {item.format_fallback_used ? (
                       <Badge tone="warning">Format Relaxed</Badge>
