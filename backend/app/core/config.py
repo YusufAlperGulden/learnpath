@@ -36,14 +36,25 @@ class Settings(BaseSettings):
 
     MASTERY_THRESHOLD_PERCENT: float = 70.0
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    CORS_ORIGIN_REGEX: str = (
+        r"^https://.*\.(onrender\.com|app\.github\.dev|githubpreview\.dev|vercel\.app)$"
+    )
 
-    @field_validator("DATABASE_URL")
+    @field_validator("DATABASE_URL", "TEST_DATABASE_URL", mode="before")
     @classmethod
     def validate_database_driver(cls, value: str) -> str:
-        if value.startswith("postgresql://"):
-            raise ValueError(
-                "DATABASE_URL must use 'postgresql+psycopg://' for SQLAlchemy 2.0 + Psycopg 3."
-            )
+        if isinstance(value, str):
+            if value.startswith("postgres://"):
+                return "postgresql+psycopg://" + value[len("postgres://") :]
+            if value.startswith("postgresql://"):
+                return "postgresql+psycopg://" + value[len("postgresql://") :]
+        return value
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip().startswith("["):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
 

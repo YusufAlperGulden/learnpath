@@ -1,11 +1,15 @@
 """FastAPI application entry point with CORS and centralized timestamped logging."""
 
+import os
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.logging_config import configure_logging, get_logger
@@ -42,6 +46,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,3 +93,19 @@ app.include_router(admin_catalog.router, prefix=settings.API_V1_PREFIX)
 app.include_router(assessments.router, prefix=settings.API_V1_PREFIX)
 app.include_router(progress.router, prefix=settings.API_V1_PREFIX)
 app.include_router(recommendations.router, prefix=settings.API_V1_PREFIX)
+
+# Optional unified SPA serving for single-URL cloud deployments (e.g., Render Blueprint)
+_static_dist = Path(os.getenv("STATIC_DIST_DIR", "/app/static_dist"))
+if _static_dist.is_dir() and (_static_dist / "index.html").is_file():
+    _assets_dir = _static_dist / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="spa-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found.")
+        candidate = (_static_dist / full_path).resolve()
+        if candidate.is_relative_to(_static_dist.resolve()) and candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(_static_dist / "index.html"))

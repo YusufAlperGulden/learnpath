@@ -105,7 +105,41 @@ Visit `http://localhost:5173` in Chrome, Firefox, or Edge.
 
 ---
 
-## 3. Reproducing Offline Research Experiments (`RQ1`–`RQ4` & `NFR-05`)
+## 3. Sharing with Classmates & Presenting at School (Zero Desktop Needed)
+
+LearnPath includes three ready-to-use portable demo modes so classmates and instructors can review code and run the live application on campus without your home desktop:
+
+### Option A — Present Directly in Any Classroom Browser (GitHub Codespaces)
+1. Open `https://github.com/YusufAlperGulden/learnpath` in Chrome, Firefox, or Edge on any school computer.
+2. Click **Code -> Codespaces -> Create codespace on main** (or `develop`).
+3. `.devcontainer/devcontainer.json` automatically starts PostgreSQL 16, applies the 13-table schema, seeds the 54-resource Python catalog + 48-learner cohort, launches FastAPI (`:8000`) and Vite (`:5173`), and opens the live app in a browser tab.
+
+### Option B — Deploy a Permanent Public HTTPS Link on Render (`render.yaml`)
+1. Sign in at `https://dashboard.render.com` with your GitHub account.
+2. Click **New + -> Blueprint** and select the `YusufAlperGulden/learnpath` repository.
+3. Render reads [`render.yaml`](render.yaml) and automatically provisions:
+   - `learnpath-db`: Free managed PostgreSQL database
+   - `learnpath`: Unified Docker Web Service serving both `/api/v1/*` and the compiled React SPA under one public `https://*.onrender.com` URL (auto-migrated & auto-seeded on boot).
+
+### Option C — 1-Command Offline Demo on Any Classmate's Laptop
+Any teammate with Docker Desktop installed can run the entire 3-tier stack with one command:
+
+```powershell
+git clone https://github.com/YusufAlperGulden/learnpath.git
+cd learnpath
+docker compose -f docker-compose.demo.yml up --build
+```
+
+Then open `http://localhost:5173` (works completely offline during the presentation once built).
+
+### Team Branching & Code Review Workflow
+- `main`: Stable presentation-ready release branch.
+- `develop`: Team integration branch (default target for Pull Requests).
+- Every `push` and `Pull Request` triggers [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`ruff check .`, `alembic upgrade head --sql`, `pytest -v`, and `npm run build`).
+
+---
+
+## 4. Reproducing Offline Research Experiments (`RQ1`–`RQ4` & `NFR-05`)
 
 All experiment scripts live in `backend/experiments/` and support `--db auto` (default: uses PostgreSQL if running, or falls back cleanly to an isolated in-memory database seeded deterministically with `seed = 4912026`).
 
@@ -127,7 +161,7 @@ cd backend
 
 ---
 
-## 4. Quality Gates & Automated Verification
+## 5. Quality Gates & Automated Verification
 
 ```powershell
 # Backend lint, migration DDL check, and full pytest suite
@@ -143,7 +177,7 @@ npm run build
 
 ---
 
-## 5. Core RAD v2.0 Invariants Enforced
+## 6. Core RAD v2.0 Invariants Enforced
 
 1. **Answer-Key Confidentiality & Zero Draft Orphans (`FR03`)**: `GET /api/v1/assessments/questions` never serializes `correct_option` or `explanation` and writes zero DB rows until submission, binding `student_id`, `attempt_id`, and `question_ids` inside a signed `test_session_token`.
 2. **Atomic, Idempotent Grading & Skipped-Question Support (`FR04`, `NFR-04`)**: `POST /api/v1/assessments/submit` commits `TestAttempt`, `Answer` (`selected_option = NULL` recorded as `is_correct = False`), `TopicScore`, and `TopicProgress` in one transaction with duplicate-click idempotency on `attempt_id`.

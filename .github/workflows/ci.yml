@@ -1,0 +1,50 @@
+name: LearnPath CI
+
+on:
+  push:
+    branches: [main, develop, "feat/**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend-quality-and-tests:
+    name: Backend Lint, Migration DDL & Pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Ruff static analysis
+        run: ruff check .
+      - name: Verify Alembic PostgreSQL 16 DDL generation
+        run: alembic upgrade head --sql > /dev/null
+      - name: Run full Pytest suite (Increments 1-6)
+        run: pytest -v
+
+  frontend-typecheck-and-build:
+    name: Frontend TypeScript & Vite Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Typecheck and build production bundle
+        run: npm run build
