@@ -43,7 +43,7 @@ export function DashboardPage() {
 
   const { data: recPreview } = useQuery({
     queryKey: ['recommendations', 'dashboard-preview'],
-    queryFn: () => studentApi.getRecommendations({ strategy: 'rule_based', limit: 3 }),
+    queryFn: () => studentApi.getRecommendations({ strategy: 'hybrid', limit: 3 }),
   });
 
   const openResourceMutation = useMutation({

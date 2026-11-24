@@ -1,7 +1,8 @@
-"""Shared candidate, context, and base ranker interface for all 5 recommendation strategies."""
+"""Shared candidate, interaction, context, and base ranker interfaces for all 5 strategies."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from uuid import UUID
 
 from app.core.enums import (
@@ -11,6 +12,16 @@ from app.core.enums import (
     MasteryStatus,
     SupportedLanguage,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionRecord:
+    """Observed student-resource rating record used to fit Popularity, CF, and Hybrid models."""
+
+    student_id: UUID
+    resource_id: UUID
+    rating: float
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +48,8 @@ class StudentRecommendationContext:
     learning_goal: str
     topic_scores: dict[UUID, float] = field(default_factory=dict)
     topic_mastery: dict[UUID, MasteryStatus] = field(default_factory=dict)
+    positive_history_resource_ids: tuple[UUID, ...] = ()
+    user_ratings: dict[UUID, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
