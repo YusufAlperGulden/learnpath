@@ -7,7 +7,7 @@ import {
   FeedbackModal,
   type FeedbackTarget,
 } from '../../components/student/FeedbackModal';
-import { Badge, Button, Card } from '../../components/ui';
+import { Badge, Button, Card, InlineCodeText } from '../../components/ui';
 import type { ResourceProgressStatus } from '../../types/api';
 
 type LibraryTab = 'bookmarks' | 'history';
@@ -111,7 +111,7 @@ export function BookmarksPage() {
   return (
     <AppLayout
       pageTitle="Saved Resources & Study History"
-      pageSubtitle="Manage bookmarked materials, distinguish OPENED vs. COMPLETED study status, and rate resources (FR08–FR09)."
+      pageSubtitle="Manage bookmarked materials, track opened and completed lessons, and share resource ratings."
     >
       <div
         role="tablist"
@@ -257,8 +257,12 @@ export function BookmarksPage() {
                 </div>
 
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">{item.title}</h2>
-                  <p className="mt-1 text-sm text-slate-600">{item.description}</p>
+                  <h2 className="text-base font-bold text-slate-900">
+                    <InlineCodeText text={item.title} />
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    <InlineCodeText text={item.description} />
+                  </p>
                 </div>
               </Card>
             ))
@@ -345,8 +349,12 @@ export function BookmarksPage() {
                 </div>
 
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">{item.title}</h2>
-                  <p className="mt-1 text-sm text-slate-600">{item.description}</p>
+                  <h2 className="text-base font-bold text-slate-900">
+                    <InlineCodeText text={item.title} />
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    <InlineCodeText text={item.description} />
+                  </p>
                 </div>
               </Card>
             ))

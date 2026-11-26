@@ -3,6 +3,7 @@ export { Button, type ButtonProps } from './Button';
 export { Card, type CardProps } from './Card';
 export { CheckboxGroup, type CheckboxGroupProps, type CheckboxOption } from './CheckboxGroup';
 export { CodeSnippetBlock, type CodeSnippetBlockProps } from './CodeSnippetBlock';
+export { InlineCodeText, type InlineCodeTextProps } from './InlineCodeText';
 export { Modal, type ModalProps } from './Modal';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { RadioCardGroup, type RadioCardGroupProps, type RadioCardOption } from './RadioCard';

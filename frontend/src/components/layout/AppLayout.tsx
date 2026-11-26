@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bookmark,
@@ -58,6 +58,7 @@ export interface AppLayoutProps {
   showInlineNav?: boolean;
   headerActions?: ReactNode;
   hidePageHeader?: boolean;
+  customH1?: boolean;
   children: ReactNode;
 }
 
@@ -70,6 +71,7 @@ export function AppLayout({
   showInlineNav = false,
   headerActions,
   hidePageHeader = false,
+  customH1 = false,
   children,
 }: AppLayoutProps) {
   const { user, logout } = useAuth();
@@ -77,6 +79,10 @@ export function AppLayout({
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [quickQuery, setQuickQuery] = useState('');
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   const homePath = user?.role === 'ADMIN' ? '/admin/resources' : '/dashboard';
 
@@ -232,9 +238,11 @@ export function AppLayout({
 
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
           {hidePageHeader ? (
-            <h1 id="main-heading" tabIndex={-1} className="visually-hidden">
-              {pageTitle}
-            </h1>
+            customH1 ? null : (
+              <h1 id="main-heading" tabIndex={-1} className="visually-hidden">
+                {pageTitle}
+              </h1>
+            )
           ) : (
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -476,9 +484,11 @@ export function AppLayout({
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {hidePageHeader ? (
-            <h1 id="main-heading" tabIndex={-1} className="visually-hidden">
-              {pageTitle}
-            </h1>
+            customH1 ? null : (
+              <h1 id="main-heading" tabIndex={-1} className="visually-hidden">
+                {pageTitle}
+              </h1>
+            )
           ) : (
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>

@@ -94,12 +94,15 @@ export function ProfileSetupPage() {
     '/assessment',
   );
 
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'Set Up Your Python Learning Profile | LearnPath';
+    if (!user?.has_profile) {
+      return;
+    }
     apiClient
       .get<StudentProfile>('/profile')
       .then(({ data }) => {
@@ -112,7 +115,7 @@ export function ProfileSetupPage() {
       .catch(() => {
         // First-time student without profile yet — defaults apply
       });
-  }, []);
+  }, [user?.has_profile]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -152,6 +155,7 @@ export function ProfileSetupPage() {
     <AppLayout
       variant="focused"
       hidePageHeader
+      customH1
       pageTitle="Set Up Your Python Learning Profile"
     >
       {/* 3-Step Onboarding Stepper (Figma Screen 3) */}
@@ -185,9 +189,13 @@ export function ProfileSetupPage() {
           <p className="text-[11px] font-bold uppercase tracking-widest text-[#14532d]">
             Let&apos;s make it personal
           </p>
-          <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+          <h1
+            id="main-heading"
+            tabIndex={-1}
+            className="mt-1 text-xl font-bold tracking-tight text-slate-900 outline-none sm:text-2xl"
+          >
             Set Up Your Python Learning Profile
-          </h2>
+          </h1>
           <p className="mt-1 text-sm text-slate-600">
             Personalize your placement test difficulty, prerequisite roadmap, and study formats.
           </p>

@@ -16,6 +16,7 @@ import {
   Button,
   Card,
   CodeSnippetBlock,
+  InlineCodeText,
   cn,
 } from '../../components/ui';
 import type { AnswerReviewItem } from '../../types/api';
@@ -64,7 +65,9 @@ function AnswerReviewCard({
         )}
       </div>
 
-      <p className="text-base font-bold leading-snug text-slate-900">{ans.question_text}</p>
+      <p className="text-base font-bold leading-snug text-slate-900">
+        <InlineCodeText text={ans.question_text} />
+      </p>
 
       {ans.code_snippet ? <CodeSnippetBlock code={ans.code_snippet} /> : null}
 
@@ -87,7 +90,7 @@ function AnswerReviewCard({
             >
               <span>
                 <span className="mr-2 font-bold">{letter}.</span>
-                {text}
+                <InlineCodeText text={text} />
               </span>
               {isCorrectOpt ? (
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[#14532d]">
@@ -109,7 +112,9 @@ function AnswerReviewCard({
         <p className="text-xs font-bold uppercase tracking-wider text-[#14532d]">
           Solution &amp; Explanation
         </p>
-        <p className="mt-1 leading-relaxed text-slate-800">{ans.explanation}</p>
+        <p className="mt-1 leading-relaxed text-slate-800">
+          <InlineCodeText text={ans.explanation} />
+        </p>
       </div>
     </Card>
   );
@@ -173,6 +178,7 @@ export function AnswerReviewPage() {
     <AppLayout
       variant="focused"
       hidePageHeader
+      customH1={!isLoading && !isError && Boolean(attempt)}
       contextPill={contextLabel}
       pageTitle="Detail Test Analysis and Gap Review"
     >
@@ -191,9 +197,13 @@ export function AnswerReviewPage() {
         <div className="mx-auto max-w-3xl space-y-6">
           {/* Centered Analysis Header (Figma Screen 5) */}
           <div className="text-center">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            <h1
+              id="main-heading"
+              tabIndex={-1}
+              className="text-2xl font-bold tracking-tight text-slate-900 outline-none sm:text-3xl"
+            >
               Detail Test Analysis and Gap Review
-            </h2>
+            </h1>
             <p className="mt-1.5 text-sm text-slate-600">
               Overall Score:{' '}
               <strong className="text-[#14532d]">

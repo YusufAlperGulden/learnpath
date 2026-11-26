@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   CodeSnippetBlock,
+  InlineCodeText,
   Modal,
   RadioCardGroup,
   type RadioCardOption,
@@ -202,7 +203,7 @@ export function AdminQuestionsSection({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-slate-900">
-            Versioned Question Pool &amp; Solution Explanations (FR12)
+            Versioned Question Pool &amp; Solution Explanations
           </h2>
           <p className="text-xs text-slate-600">
             Editing a question already answered in any exam preserves the old row untouched and
@@ -384,7 +385,9 @@ export function AdminQuestionsSection({
                 </div>
               </div>
 
-              <p className="mt-3 text-sm font-semibold text-slate-900">{q.question_text}</p>
+              <p className="mt-3 text-sm font-semibold text-slate-900">
+                <InlineCodeText text={q.question_text} />
+              </p>
 
               {q.code_snippet ? (
                 <CodeSnippetBlock code={q.code_snippet} className="mt-3" />
@@ -410,7 +413,7 @@ export function AdminQuestionsSection({
                       }
                     >
                       <span className="mr-1.5 font-bold">{letter}.</span>
-                      {text}
+                      <InlineCodeText text={text} />
                       {isCorrect ? ' (Correct Answer)' : ''}
                     </div>
                   );
@@ -419,7 +422,7 @@ export function AdminQuestionsSection({
 
               <div className="mt-3 rounded-lg border border-[#b9d8c5] bg-[#edf6f0] px-3.5 py-2.5 text-xs text-slate-800">
                 <span className="font-semibold text-[#14532d]">Solution &amp; Explanation: </span>
-                {q.explanation}
+                <InlineCodeText text={q.explanation} />
               </div>
             </Card>
           ))}

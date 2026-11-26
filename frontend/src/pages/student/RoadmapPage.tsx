@@ -94,8 +94,8 @@ export function RoadmapPage() {
 
   return (
     <AppLayout
-      pageTitle="Python Prerequisite Roadmap (DAG)"
-      pageSubtitle="Self-study completion tracks your personal study checklist, while exam mastery (>= 70%) unlocks downstream prerequisite gates (FR05, FR08)."
+      pageTitle="Python Prerequisite Roadmap"
+      pageSubtitle="Self-study completion tracks your personal study checklist, while exam mastery (>= 70%) unlocks downstream prerequisite topics."
     >
       <div className="mb-4 flex flex-wrap gap-2">
         <Badge tone="success">MASTERED (&gt;= 70% Exam Gate)</Badge>
