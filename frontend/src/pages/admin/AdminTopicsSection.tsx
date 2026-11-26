@@ -197,7 +197,7 @@ export function AdminTopicsSection({ topics, isLoading }: AdminTopicsSectionProp
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-slate-900">
-            Curriculum Directed Acyclic Graph (FR11)
+            Curriculum Directed Acyclic Graph
           </h2>
           <p className="text-xs text-slate-600">
             Pure-Python DFS validation blocks self-references and transitive prerequisite cycles

@@ -25,7 +25,7 @@ import {
 import { apiClient } from '../../api/client';
 import { studentApi } from '../../api/student';
 import { AppLayout } from '../../components/layout/AppLayout';
-import { Badge, Card, ProgressBar, cn } from '../../components/ui';
+import { Badge, Card, InlineCodeText, ProgressBar, cn } from '../../components/ui';
 import type { ContentType, StudentProfile } from '../../types/api';
 
 function FormatIcon({ type, className }: { type: ContentType; className?: string }) {
@@ -54,7 +54,7 @@ export function DashboardPage() {
     retry: false,
   });
 
-  const { data: pathData } = useQuery({
+  const { data: pathData, isLoading: isLoadingPath } = useQuery({
     queryKey: ['learning-path'],
     queryFn: studentApi.getLearningPath,
   });
@@ -167,14 +167,18 @@ export function DashboardPage() {
   );
 
   return (
-    <AppLayout variant="sidebar" hidePageHeader pageTitle="Overview">
+    <AppLayout variant="sidebar" hidePageHeader customH1 pageTitle="Overview">
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Left Column (2/3 width — Figma Screen 2) */}
         <div className="space-y-6 lg:col-span-2">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-[26px]">
+            <h1
+              id="main-heading"
+              tabIndex={-1}
+              className="text-2xl font-bold tracking-tight text-slate-900 outline-none sm:text-[26px]"
+            >
               A little progress. A world of possibilities.
-            </h2>
+            </h1>
             <p className="mt-1 text-sm text-slate-600">
               Welcome back{profile?.display_name ? `, ${profile.display_name}` : ''}. Let&apos;s
               find what moves you forward.
@@ -241,7 +245,11 @@ export function DashboardPage() {
               <p className="mt-3 truncate border-t border-slate-100 pt-2 text-[11px] text-slate-600">
                 Focus:{' '}
                 <strong className="text-slate-900">
-                  {nextTopic ? nextTopic.name : 'All Topics Mastered'}
+                  {nextTopic
+                    ? nextTopic.name
+                    : isLoadingPath && nodes.length === 0
+                      ? 'Loading curriculum...'
+                      : 'All Topics Mastered'}
                 </strong>
               </p>
             </div>
@@ -380,14 +388,16 @@ export function DashboardPage() {
                             {item.topic_name}
                           </p>
                           <h4 className="mt-0.5 line-clamp-2 text-sm font-bold leading-snug text-slate-900">
-                            {item.title}
+                            <InlineCodeText text={item.title} />
                           </h4>
                           <p className="mt-1.5 line-clamp-2 flex items-start gap-1 text-[11px] text-slate-600">
                             <Sparkles
                               aria-hidden="true"
                               className="mt-0.5 h-3 w-3 shrink-0 text-[#14532d]"
                             />
-                            <span>{item.rationale}</span>
+                            <span>
+                              <InlineCodeText text={item.rationale} />
+                            </span>
                           </p>
                         </div>
                       </div>
@@ -487,13 +497,15 @@ export function DashboardPage() {
           <Card className="border-[#dce6df] p-5">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900">Progress dashboard</h3>
-              <Badge tone="info">{nodes.length}-Topic DAG</Badge>
+              <Badge tone="info">
+                {isLoadingPath && nodes.length === 0 ? 'DAG' : `${nodes.length}-Topic DAG`}
+              </Badge>
             </div>
 
             <div className="mt-3 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-lg bg-[#f4f8f5] p-2">
                 <p className="text-base font-bold text-[#14532d]">
-                  {masteredCount}/{nodes.length}
+                  {isLoadingPath && nodes.length === 0 ? '—' : `${masteredCount}/${nodes.length}`}
                 </p>
                 <p className="text-[10px] font-medium text-slate-500">Mastered</p>
               </div>

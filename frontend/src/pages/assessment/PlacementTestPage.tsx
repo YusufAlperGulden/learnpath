@@ -25,6 +25,7 @@ import {
   Button,
   Card,
   CodeSnippetBlock,
+  InlineCodeText,
   Modal,
   cn,
 } from '../../components/ui';
@@ -213,7 +214,7 @@ export function PlacementTestPage() {
   );
 
   const progressPercent =
-    questions.length > 0 ? Math.round(((currentIndex + 1) / questions.length) * 100) : 0;
+    questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
   const skippedQuestionNumbers = useMemo(
     () =>
@@ -433,7 +434,7 @@ export function PlacementTestPage() {
               </div>
               <progress
                 id="placement-step-progress"
-                value={currentIndex + 1}
+                value={answeredCount}
                 max={questions.length}
                 className="h-2 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:bg-[#14532d] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#dce8e1] [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-[#14532d]"
               >
@@ -491,7 +492,7 @@ export function PlacementTestPage() {
                 tabIndex={-1}
                 className="mt-4 text-lg font-bold leading-snug text-slate-900 outline-none sm:text-xl"
               >
-                {activeQuestion.question_text}
+                <InlineCodeText text={activeQuestion.question_text} />
               </h2>
 
               {activeQuestion.code_snippet ? (
@@ -560,7 +561,9 @@ export function PlacementTestPage() {
                             >
                               {letter}
                             </span>
-                            <span>{text}</span>
+                            <span>
+                              <InlineCodeText text={text} />
+                            </span>
                           </span>
 
                           <span
@@ -642,7 +645,7 @@ export function PlacementTestPage() {
         open={isSkipConfirmOpen}
         onClose={() => setIsSkipConfirmOpen(false)}
         title="Submit With Unanswered Questions?"
-        description="Unanswered questions are recorded with selected_option = NULL and scored as 0 points so your diagnostic stays honest."
+        description="Unanswered questions are recorded as skipped and scored as 0 points so your diagnostic stays accurate."
       >
         <div className="space-y-4">
           <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-950">

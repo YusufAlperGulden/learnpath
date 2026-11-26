@@ -78,7 +78,7 @@ export function TopicQuestionManagerPage() {
           ? 'Versioned Question Pool'
           : 'Topics & Prerequisite Graph'
       }
-      pageSubtitle="Manage acyclic Python topic prerequisites (FR11) and immutable question versioning (FR12)."
+      pageSubtitle="Manage acyclic Python topic prerequisites and immutable question versioning."
     >
       <div
         role="tablist"

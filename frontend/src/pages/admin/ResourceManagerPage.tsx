@@ -19,7 +19,15 @@ import {
 } from 'lucide-react';
 import { adminApi, extractApiErrorMessage } from '../../api/admin';
 import { AppLayout } from '../../components/layout/AppLayout';
-import { Badge, Button, Card, Modal, ResponsiveTable, cn } from '../../components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  InlineCodeText,
+  Modal,
+  ResponsiveTable,
+  cn,
+} from '../../components/ui';
 import type {
   ContentType,
   DifficultyLevel,
@@ -471,9 +479,11 @@ export function ResourceManagerPage() {
                         <FormatIcon type={res.content_type} />
                       </span>
                       <div className="min-w-0">
-                        <div className="font-semibold text-slate-900">{res.title}</div>
+                        <div className="font-semibold text-slate-900">
+                          <InlineCodeText text={res.title} />
+                        </div>
                         <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
-                          {res.description}
+                          <InlineCodeText text={res.description} />
                         </p>
                       </div>
                     </div>

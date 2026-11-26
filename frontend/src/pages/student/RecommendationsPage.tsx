@@ -21,7 +21,7 @@ import {
   FeedbackModal,
   type FeedbackTarget,
 } from '../../components/student/FeedbackModal';
-import { Badge, Button, Card, cn } from '../../components/ui';
+import { Badge, Button, Card, InlineCodeText, cn } from '../../components/ui';
 import type { ContentType, MasteryStatus, RecommenderStrategy } from '../../types/api';
 
 const VALID_STRATEGIES: RecommenderStrategy[] = [
@@ -588,10 +588,10 @@ export function RecommendationsPage() {
                     {/* Title & Description */}
                     <div>
                       <h3 className="text-base font-bold leading-snug text-slate-900">
-                        {item.title}
+                        <InlineCodeText text={item.title} />
                       </h3>
                       <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-600">
-                        {item.description}
+                        <InlineCodeText text={item.description} />
                       </p>
                     </div>
 
@@ -694,7 +694,7 @@ export function RecommendationsPage() {
                     />
                     <p className="leading-relaxed">
                       <strong className="font-semibold text-[#14532d]">Why recommended: </strong>
-                      {item.rationale}
+                      <InlineCodeText text={item.rationale} />
                     </p>
                   </div>
                 </Card>
